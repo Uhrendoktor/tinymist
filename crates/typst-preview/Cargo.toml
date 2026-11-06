@@ -27,7 +27,11 @@ serde.workspace = true
 tinymist-assets.workspace = true
 tinymist-std.workspace = true
 tinymist-task.workspace = true
-tokio = { workspace = true, features = ["time", "rt-multi-thread"] }
+# The preview actors run on the browser's single-threaded Tokio runtime too.
+tokio = { workspace = true, features = ["time", "sync", "rt"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 typst.workspace = true
 typst-html.workspace = true
 typst-macros.workspace = true

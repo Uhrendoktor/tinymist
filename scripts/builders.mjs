@@ -230,7 +230,7 @@ export async function installVscode(kind) {
 export async function buildWebLspBinaryBase() {
   await spawnAsync(
     "lsp:web",
-    "cd crates/tinymist && wasm-pack build --target web -- --no-default-features --features web,no-content-hint",
+    "cd crates/tinymist && wasm-pack build --target web -- --no-default-features --features web,preview-web,no-content-hint",
   );
 }
 
