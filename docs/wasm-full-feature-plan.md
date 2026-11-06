@@ -14,8 +14,8 @@ The native preview command currently creates a local HTTP server and WebSocket e
 
 Other native assumptions also need browser adapters:
 - filesystem access must go through `vscode.workspace.fs` and the existing client-side file synchronization;
-- package registry/cache operations need browser-backed resolution and persistence;
-- system font discovery must be replaced by bundled/workspace font provisioning;
+- curated package and font assets can be supplied by a build-time manifest and embedded in WASM; runtime package downloads and OS font discovery remain unavailable;
+- workspace/user font provisioning still requires a separate browser-safe source if it is to be supported;
 - export must return bytes to the extension host and write them through VS Code's workspace filesystem;
 - native tasks, shell/process launch, local HTTP serving, and external-browser opening require browser-specific equivalents or explicit unsupported states.
 
@@ -27,8 +27,8 @@ Finally, a no-native desktop install must select the browser extension host. VS 
 2. Keep the native extension package unchanged. Produce a separate browser-only VSIX with a browser entry point and no native `main` entry.
 3. Split preview core from native transport dependencies. Compile the existing preview actors/data-plane for WASM and adapt its Sink/Stream to task-scoped LSP notifications and VS Code Webview messages. Do not reimplement rendering in TypeScript or render every page eagerly.
 4. Reuse the current preview frontend and its binary incremental-render protocol. The Webview adapter should preserve page navigation, outline, scroll synchronization, source-to-preview navigation, and partial rendering.
-5. Complete browser filesystem, font, package, and export adapters. Keep OS-dependent features gated behind the native/system feature.
-6. Add browser-target build and CI checks, package-manifest validation, and integration tests for multi-page lazy preview.
+5. Keep browser workspace access on `vscode.workspace.fs`; supply offline packages/fonts through the build-time asset manifest and embed their bytes in WASM. Keep OS-dependent features gated behind the native/system feature.
+6. Add browser-target build and CI checks, strict package/font hash-lock and license checks, WASM-byte embedding assertions, and integration tests for multi-page lazy preview.
 
 ## Tokio and WASM constraints
 
@@ -57,6 +57,6 @@ Frame conversion tests cover text, binary, ping, pong, and invalid base64. A foc
 
 The browser build now rebuilds `tools/typst-preview-frontend` before compiling the WASM asset, and checks for the bridge markers in both generated HTML and the resulting WASM module. The WebSocket shim is gated to browser Webviews, and browser preview startup no longer asks Rust to create a localhost listener. These checks are committed but remain unexecuted until an exact-head workflow run is available.
 
-**Bundled-only preview scope (2026-11-06):** the WASM extension must render with the preview HTML compiled into Tinymist's own WASM asset and Tinymist's embedded fonts. It must ignore configured custom preview providers, must not load external preview HTML or third-party previewer extensions, and must not use localhost HTTP/WebSocket services. The web Worker package resolver still returns `undefined`; therefore documents requiring remote `@preview` packages are not supported by this build. Workspace/user font provisioning is also not provided. These are explicit limits of this preview milestone, not pending adapter work.
+**Browser asset scope (2026-11-06):** the WASM extension renders with the preview HTML compiled into Tinymist's own WASM asset and the existing incremental renderer. It ignores configured custom preview providers, does not load external preview HTML or third-party previewer extensions, and does not use localhost HTTP/WebSocket services. External Typst packages and fonts are available only when listed in `wasm-assets.json`; GitHub Actions fetches them, checks the adjacent SHA-256 lockfile and license notices, and compiles their bytes into `tinymist_bg.wasm`. The browser package registry fails closed for every unlisted package; runtime downloads are not used. Workspace/user font injection and OS font discovery remain unsupported.
 
-Before this PR can be called verified, exact-head CI must build/package the browser VSIX and a live VS Code Web Extension Host test must cover multi-page rendering, incremental updates after edits, outline/source/scroll synchronization, and disposal. Native-only tasks/process launch, shell commands, TCP servers, OS font enumeration, and external application launching remain unsupported.
+Before this PR can be called verified, exact-head CI must build/package the browser VSIX and verify selected package/font/license bytes are embedded in WASM; a live VS Code Web Extension Host test must cover multi-page rendering, incremental updates after edits, outline/source/scroll synchronization, and disposal. Native-only tasks/process launch, shell commands, TCP servers, OS font enumeration, and external application launching remain unsupported.
