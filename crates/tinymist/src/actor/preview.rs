@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 use sync_ls::{internal_error, LspClient, LspResult};
 #[cfg(feature = "preview-web")]
 use tinymist_preview::WsMessage;
-#[cfg(feature = "preview")]
+#[cfg(any(feature = "preview", feature = "preview-web"))]
 use tinymist_preview::{ControlPlaneMessage, Previewer};
 use tinymist_std::error::IgnoreLogging;
 use tokio::sync::{mpsc, oneshot};
