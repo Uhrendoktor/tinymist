@@ -4,8 +4,16 @@ import { FeatureEntry, tinymistActivate, tinymistDeactivate } from "./extension.
 import { extensionState } from "./state";
 import { createBrowserLanguageClient } from "./lsp.web";
 import { LanguageState } from "./lsp";
+import { previewActivate, previewDeactivate } from "./features/preview";
+import { IContext } from "./context";
 
-const webActivateTable = (): FeatureEntry[] => [];
+function activateWebPreview(context: IContext) {
+  previewActivate(context.context, false);
+}
+
+const webActivateTable = (): FeatureEntry[] => [
+  [extensionState.features.preview, activateWebPreview, previewDeactivate],
+];
 
 LanguageState.Client = createBrowserLanguageClient;
 
@@ -26,7 +34,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     onEnter: false,
     testing: false,
     testingDebug: false,
-    preview: false,
+    preview: true,
     language: false,
     renderDocs: false,
   };

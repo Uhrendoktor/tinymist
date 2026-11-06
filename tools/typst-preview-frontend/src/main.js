@@ -107,6 +107,7 @@ function setupVscodeChannel(nextWs) {
   const vscodeAPI = typeof acquireVsCodeApi !== "undefined" && acquireVsCodeApi();
   if (vscodeAPI?.postMessage) {
     vscodeAPI.postMessage({ type: "started" });
+    installVscodeWebSocket(vscodeAPI);
   }
   if (vscodeAPI?.setState && window.vscode_state) {
     vscodeAPI.setState(window.vscode_state);
@@ -129,6 +130,146 @@ function setupVscodeChannel(nextWs) {
         console.log("outline", message);
         break;
       }
+    }
+  });
+}
+
+
+/**
+ * Adapts the preview frontend's ordinary WebSocket API to the extension-host
+ * message channel. The Rust preview renderer still speaks its existing
+ * binary WebSocket protocol; only the browser transport is replaced.
+ */
+function installVscodeWebSocket(vscodeAPI) {
+  const taskId = window.vscode_state?.taskId;
+  if (!taskId) {
+    console.warn("Tinymist Webview bridge was not given a preview task id");
+    return;
+  }
+  const sockets = new Set();
+  const encodeBase64 = (buffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return btoa(binary);
+  };
+  const decodeBase64 = (encoded) => {
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes.buffer;
+  };
+
+  class VscodeWebSocket extends EventTarget {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+
+    CONNECTING = 0;
+    OPEN = 1;
+    CLOSING = 2;
+    CLOSED = 3;
+    readyState = VscodeWebSocket.CONNECTING;
+    binaryType = "blob";
+    bufferedAmount = 0;
+    extensions = "";
+    protocol = "";
+    url;
+    onopen = null;
+    onmessage = null;
+    onerror = null;
+    onclose = null;
+
+    constructor(url, _protocols) {
+      super();
+      this.url = String(url);
+      sockets.add(this);
+      queueMicrotask(() => {
+        if (this.readyState !== VscodeWebSocket.CONNECTING) return;
+        this.readyState = VscodeWebSocket.OPEN;
+        this.emit("open", new Event("open"));
+      });
+    }
+
+    emit(type, event) {
+      this.dispatchEvent(event);
+      const handler = this["on" + type];
+      if (typeof handler === "function") handler.call(this, event);
+    }
+
+    send(data) {
+      if (this.readyState !== VscodeWebSocket.OPEN) {
+        throw new Error("WebSocket is not open");
+      }
+      if (typeof data === "string") {
+        vscodeAPI.postMessage({
+          type: "tinymist-preview-frame",
+          taskId,
+          message: { taskId, kind: "text", data },
+        });
+        return;
+      }
+      if (data instanceof Blob) {
+        void data.arrayBuffer().then((buffer) => this.send(buffer));
+        return;
+      }
+      let buffer;
+      if (data instanceof ArrayBuffer) {
+        buffer = data;
+      } else if (ArrayBuffer.isView(data)) {
+        buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      } else {
+        throw new TypeError("Unsupported WebSocket frame type");
+      }
+      vscodeAPI.postMessage({
+        type: "tinymist-preview-frame",
+        taskId,
+        message: { taskId, kind: "binary", data: encodeBase64(buffer) },
+      });
+    }
+
+    close(code = 1000, reason = "") {
+      if (this.readyState >= VscodeWebSocket.CLOSING) return;
+      this.readyState = VscodeWebSocket.CLOSING;
+      sockets.delete(this);
+      this.readyState = VscodeWebSocket.CLOSED;
+      this.emit("close", new CloseEvent("close", { code, reason, wasClean: true }));
+    }
+
+    receive(message) {
+      if (this.readyState !== VscodeWebSocket.OPEN) return;
+      if (message.kind === "ping") {
+        vscodeAPI.postMessage({
+          type: "tinymist-preview-frame",
+          taskId,
+          message: { taskId, kind: "pong", data: message.data },
+        });
+        return;
+      }
+      if (message.kind === "pong") return;
+      const data = message.kind === "text" ? message.data : decodeBase64(message.data);
+      this.emit("message", new MessageEvent("message", { data }));
+    }
+  }
+
+  window.WebSocket = VscodeWebSocket;
+
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    if (
+      message?.type !== "tinymist-preview-frame" ||
+      message.taskId !== taskId ||
+      !message.message
+    ) {
+      return;
+    }
+    for (const socket of sockets) {
+      socket.receive(message.message);
     }
   });
 }

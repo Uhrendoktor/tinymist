@@ -325,16 +325,16 @@ interface OpenPreviewInWebViewArgs {
    * The preview task arguments.
    */
   task: LaunchInWebViewTask;
+  /** Task id assigned to the Rust preview actor. */
+  taskId: string;
+  /** Whether this preview uses the browser Webview/LSP data-plane bridge. */
+  browserTransport: boolean;
   /**
    * The active editor owning *typst language document*.
    */
   activeEditor: vscode.TextEditor;
-  /**
-   * The port number of the data plane server.
-   *
-   * The server is already opened by the {@link launchImpl} function.
-   */
-  dataPlanePort: string | number;
+  /** Native data-plane port. Omitted for browser previews. */
+  dataPlanePort?: string | number;
   /**
    * The existing webview panel to reuse.
    */
@@ -363,6 +363,8 @@ export interface OpenedPreviewWebview {
 export async function openPreviewInWebView({
   context,
   task,
+  taskId,
+  browserTransport,
   activeEditor,
   dataPlanePort,
   webviewPanel,
@@ -401,12 +403,35 @@ export async function openPreviewInWebView({
     localResourceRoots: previewer.localResourceRoots,
   };
 
+  // Replace the native WebSocket with a task-scoped extension-host bridge in the browser.
+  const browserMessageListener = browserTransport
+    ? tinymist.registerBrowserPreviewMessageListener(taskId, (message) => {
+        void panel.webview.postMessage({
+          type: "tinymist-preview-frame",
+          taskId,
+          message,
+        });
+      })
+    : undefined;
+  const browserRequestListener = browserTransport
+    ? panel.webview.onDidReceiveMessage((message) => {
+        if (
+          message?.type === "tinymist-preview-frame" &&
+          message.taskId === taskId &&
+          message.message
+        ) {
+          tinymist.sendBrowserPreviewMessage({ ...message.message, taskId });
+        }
+      })
+    : undefined;
+
   const previewState: PersistPreviewState = {
     mode: task.mode,
     isNotPrimary: !!task.isNotPrimary,
     isBrowsing: !!task.isBrowsing,
     isDev: !!task.isDev,
     uri: activeEditor.document.uri.toString(),
+    taskId,
   };
 
   const updateActivePanel = () => {
@@ -427,6 +452,8 @@ export async function openPreviewInWebView({
     if (extensionState.getFocusingPreviewPanelContext()?.panel === panel) {
       extensionState.mut.focusingPreviewPanelContext = undefined;
     }
+    browserMessageListener?.dispose();
+    browserRequestListener?.dispose();
     await panelDispose();
     console.log("killed preview services");
   });
@@ -439,9 +466,13 @@ export async function openPreviewInWebView({
   let html = rewritePreviewAssetRoot(previewer, panel.webview);
   html = html.replace("preview-arg:previewMode:Doc", `preview-arg:previewMode:${previewMode}`);
   html = html.replace("preview-arg:state:", `preview-arg:state:${previewStateEncoded}`);
-  // Forwards the localhost port to the external URL. Since WebSocket runs over HTTP, it should be fine.
-  // https://code.visualstudio.com/api/advanced-topics/remote-extensions#forwarding-localhost
-  html = html.replace("ws://127.0.0.1:23625", await externalDataPlaneHost(dataPlanePort));
+  if (!browserTransport) {
+    // Forward the localhost port to the external URL for native WebSocket previews.
+    if (dataPlanePort === undefined) {
+      throw new Error("Native preview data-plane port was not provided");
+    }
+    html = html.replace("ws://127.0.0.1:23625", await externalDataPlaneHost(dataPlanePort));
+  }
 
   // Sets the HTML content to the webview panel.
   // This will reload the webview panel if it's already opened.
@@ -471,6 +502,11 @@ const activeTask = new Map<vscode.TextDocument, TaskControlBlock>();
 async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask) {
   const { kind, context, editor, bindDocument, webviewPanel, isBrowsing, isDev, isNotPrimary } =
     task;
+  const browserTransport = extensionState.features.web;
+
+  if (browserTransport && kind === "browser") {
+    throw new Error("External-browser preview requires a native local HTTP server; use the integrated Webview preview in the WebAssembly extension.");
+  }
 
   /**
    * Can only open one preview for one document.
@@ -494,7 +530,7 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
   registerPreviewTaskDispose(taskId, disposes);
 
   const { dataPlanePort, staticServerPort, isPrimary } = await invokeLspCommand();
-  if (!dataPlanePort || !staticServerPort) {
+  if (!browserTransport && (!dataPlanePort || !staticServerPort)) {
     disposes.dispose();
     throw new Error(`Failed to launch preview ${filePath}`);
   }
@@ -513,7 +549,7 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
   }
   const isHandledByPreviewer = kind === "webview" && !!resolvedPreviewer?.handlePreview;
 
-  if (isPrimary && !isHandledByPreviewer) {
+  if (isPrimary && !isHandledByPreviewer && !browserTransport) {
     const connectUrl = translateExternalURL(`ws://127.0.0.1:${dataPlanePort}`);
     contentPreviewProvider.then((p) => p.postActivate(connectUrl));
     disposes.add(() => {
@@ -526,10 +562,15 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
   switch (kind) {
     case "webview": {
       if (resolvedPreviewer?.handlePreview) {
+        if (browserTransport) {
+          disposes.dispose();
+          await tinymist.killPreview(taskId);
+          throw new Error("Custom previewer handlers that require a native WebSocket host are not available in the browser extension.");
+        }
         try {
           const dataPlaneHost = resolvedPreviewer.preferExternalDataPlaneHost
-            ? await externalDataPlaneHost(dataPlanePort)
-            : localDataPlaneHost(dataPlanePort);
+            ? await externalDataPlaneHost(dataPlanePort!)
+            : localDataPlaneHost(dataPlanePort!);
           const previewHandle = await resolvedPreviewer.handlePreview({
             taskId,
             documentUri: bindDocument.uri.toString(),
@@ -537,8 +578,8 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
             mode: task.mode,
             target: resolvedPreviewer.source.target ?? "paged",
             dataPlaneHost,
-            dataPlanePort,
-            staticServerPort,
+            dataPlanePort: dataPlanePort!,
+            staticServerPort: staticServerPort!,
             initialWindowState: loadStoredViewerWindowState(context),
             isBrowsing: !!isBrowsing,
             isPrimary: !!isPrimary,
@@ -556,6 +597,8 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
       const openedPreview = await openPreviewInWebView({
         context,
         task,
+        taskId,
+        browserTransport,
         activeEditor: editor,
         dataPlanePort,
         webviewPanel,
@@ -1024,6 +1067,7 @@ export class OutlineItem extends vscode.TreeItem {
 }
 
 interface PersistPreviewState {
+  taskId?: string;
   mode: "doc" | "slide";
   isNotPrimary: boolean;
   isBrowsing: boolean;

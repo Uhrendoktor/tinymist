@@ -46,6 +46,12 @@ const PROBE_TIMEOUT = 60_000;
 /**
  * The result of starting a preview task.
  */
+export interface BrowserPreviewDataMessage {
+  taskId: string;
+  kind: "text" | "binary" | "ping" | "pong";
+  data: string;
+}
+
 export interface PreviewResult {
   /**
    * The frontend address
@@ -110,6 +116,8 @@ export class LanguageState {
   clientPromise: Promise<LanguageClient> = new Promise((resolve) => {
     this.clientPromiseResolve = resolve;
   });
+  private browserPreviewListeners = new Map<string, (message: BrowserPreviewDataMessage) => void>();
+  private pendingBrowserPreviewMessages = new Map<string, BrowserPreviewDataMessage[]>();
 
   async stop() {
     this.clientPromiseResolve = (_client: LanguageClient) => {};
@@ -125,6 +133,8 @@ export class LanguageState {
       await this.client.stop();
       this.client = undefined;
     }
+    this.browserPreviewListeners.clear();
+    this.pendingBrowserPreviewMessages.clear();
     // Reset server readiness flag so other code doesn't assume a running server
     if (extensionState?.mut) {
       extensionState.mut.serverReady = false;
@@ -606,6 +616,26 @@ export class LanguageState {
    * {@link _GroupDocumentPreviewFeatureCommands} for more information.
    */
   registerPreviewNotifications(client: LanguageClient) {
+    // Browser preview data-plane frames are relayed to the matching Webview. Messages are queued
+    // until the Webview has finished opening so the initial full render is not lost.
+    client.onNotification("tinymist/preview/serverMessage", (message: BrowserPreviewDataMessage) => {
+      if (!message || typeof message.taskId !== "string") {
+        return;
+      }
+      const listener = this.browserPreviewListeners.get(message.taskId);
+      if (listener) {
+        listener(message);
+        return;
+      }
+      const pending = this.pendingBrowserPreviewMessages.get(message.taskId) || [];
+      pending.push(message);
+      // A disconnected Webview must not be able to grow the extension-host queue indefinitely.
+      if (pending.length > 512) {
+        pending.shift();
+      }
+      this.pendingBrowserPreviewMessages.set(message.taskId, pending);
+    });
+
     // (Required) The server requests to dispose (clean up) a preview task when it is no longer
     // needed.
     client.onNotification("tinymist/preview/dispose", ({ taskId }) => {
@@ -683,6 +713,40 @@ export class LanguageState {
     client.onNotification("tinymist/preview/windowState", async (data: unknown) => {
       await saveStoredViewerWindowState(this.context, data);
     });
+  }
+
+  /**
+   * Registers the Webview receiver for one browser preview's message channel.
+   */
+  registerBrowserPreviewMessageListener(
+    taskId: string,
+    listener: (message: BrowserPreviewDataMessage) => void,
+  ): vscode.Disposable {
+    this.browserPreviewListeners.set(taskId, listener);
+    const pending = this.pendingBrowserPreviewMessages.get(taskId) || [];
+    this.pendingBrowserPreviewMessages.delete(taskId);
+    for (const message of pending) {
+      listener(message);
+    }
+    return {
+      dispose: () => {
+        if (this.browserPreviewListeners.get(taskId) === listener) {
+          this.browserPreviewListeners.delete(taskId);
+        }
+        this.pendingBrowserPreviewMessages.delete(taskId);
+      },
+    };
+  }
+
+  /**
+   * Sends one Webview WebSocket frame to the Rust preview actor.
+   */
+  sendBrowserPreviewMessage(message: BrowserPreviewDataMessage): void {
+    if (!this.client) {
+      console.warn("Dropping browser preview frame because the language client is stopped");
+      return;
+    }
+    this.client.sendNotification("tinymist/preview/clientMessage", message);
   }
 
   /**
