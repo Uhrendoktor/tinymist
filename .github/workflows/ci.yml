@@ -266,3 +266,32 @@ jobs:
         run: ./editors/neovim/bootstrap.sh test
         env:
           TINYMIST_BIN: ${{ github.workspace }}/prebuilts/tinymist
+
+  checks-wasm-browser:
+    name: Build and verify browser-only WASM VSIX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-shared-key: wasm32-unknown-unknown
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - name: Install WebAssembly target and wasm-pack
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install wasm-pack --locked
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile
+      - name: Build and package browser-only Tinymist
+        run: yarn package:vscode:web
+      - name: Upload browser-only VSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinymist-web-vsix
+          path: dist/tinymist-web-*.vsix
+          if-no-files-found: error
+          retention-days: 14

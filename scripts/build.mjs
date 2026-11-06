@@ -15,6 +15,7 @@ const vector = {
   "install:vscode": () => build.installVscode("release"),
   "build:web:base": build.buildWebLspBinaryBase,
   "build:web": build.buildTinymistVscodeWeb,
+  "package:vscode:web": build.packageTinymistVscodeWeb,
   "test:vsc": build.testTinymistVscode,
 };
 

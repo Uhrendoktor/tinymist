@@ -241,3 +241,13 @@ export async function buildWebLspBinary() {
     path.resolve(vscodeDir, "out/tinymist_bg.wasm"),
   );
 }
+
+/**
+ * Builds and packages the browser-only VS Code distribution.
+ *
+ * This path deliberately does not build or copy the native Tinymist executable.
+ */
+export async function packageTinymistVscodeWeb() {
+  await buildTinymistVscodeWeb();
+  await spawnAsync("vscode:web:package", "node scripts/package-web.mjs");
+}
