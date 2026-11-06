@@ -30,6 +30,8 @@ use tinymist_preview::{
     PreviewBuilder, PreviewConfig, PreviewMode, ViewerWindowState, WsMessage,
 };
 #[cfg(feature = "preview")]
+use tinymist_preview::Previewer;
+#[cfg(feature = "preview")]
 use tinymist_preview::frontend_html;
 use tinymist_query::{LspPosition, LspRange};
 use tinymist_std::error::IgnoreLogging;

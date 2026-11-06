@@ -37,7 +37,7 @@ use crate::world::font::FontResolverImpl;
 
 #[cfg(feature = "export")]
 use task::ExportUserConfig;
-#[cfg(feature = "preview")]
+#[cfg(any(feature = "preview", feature = "preview-web"))]
 use tinymist_preview::{PreviewConfig, PreviewInvertColors};
 
 #[cfg(feature = "export")]
@@ -1237,7 +1237,7 @@ pub struct PreviewFeat {
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub partial_rendering: bool,
     /// Invert colors for the preview.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub invert_colors: PreviewInvertColors,
 }
