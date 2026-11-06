@@ -331,7 +331,7 @@ function withPageSuffix(filePath: string, page: number): string {
 
 async function writeBrowserFile(filePath: string, encoded: string): Promise<void> {
   const separator = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf(String.fromCharCode(92)));
-  const parent = filePath.slice(0, separator);
+  const parent = separator >= 0 ? filePath.slice(0, separator) : "";
   if (parent) {
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(parent));
   }
@@ -461,7 +461,13 @@ export async function commandShow(kind: ExportKind, extraOpts?: ExportOpts): Pro
       await vscode.window.showErrorMessage(`Failed to export ${kind}: no path in response`);
       return;
     }
-    await commands.executeCommand("revealFileInOS", vscode.Uri.file(exportPath));
+    if (extensionState.features.web) {
+      await vscode.window.showInformationMessage(
+        l10nMsg("Bundle exported to: {path}", { path: exportPath }),
+      );
+    } else {
+      await commands.executeCommand("revealFileInOS", vscode.Uri.file(exportPath));
+    }
     return;
   }
 

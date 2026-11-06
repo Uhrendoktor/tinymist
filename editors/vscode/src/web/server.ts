@@ -49,6 +49,11 @@ if ("stackTraceLimit" in Error) {
     },
     sendNotification: ({ method, params }: any): void =>
       void connection.sendNotification(method, params),
+    // Rust's browser package registry needs a synchronous resolver. The
+    // browser distribution currently has no populated package cache, so
+    // unresolved package specs deliberately return undefined (NotFound)
+    // instead of failing server construction because the callback is absent.
+    resolveFn: (_spec: any): string | undefined => undefined,
   });
 
   // Post-processes server events after sent responses to the client.
