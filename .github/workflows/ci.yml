@@ -41,11 +41,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const branch = context.payload.pull_request?.head.ref ?? (
-              context.ref.startsWith("refs/heads/")
-                ? context.ref.slice("refs/heads/".length)
-                : context.ref
-            );
+            const branch = context.payload.pull_request?.head.ref ?? context.ref.split("/").slice(2).join("/");
+            const headSha = context.payload.pull_request?.head.sha ?? context.sha;
             if (!branch) {
               core.info("No branch name; skipping stale-run cancellation.");
               return;
@@ -67,7 +64,7 @@ jobs:
                 if (
                   run.id !== context.runId &&
                   run.head_branch === branch &&
-                  run.head_sha !== context.sha
+                  run.head_sha !== headSha
                 ) {
                   runsById.set(run.id, run);
                 }
