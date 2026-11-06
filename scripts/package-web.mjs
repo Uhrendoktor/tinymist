@@ -30,6 +30,39 @@ for (const relativePath of requiredFiles) {
 }
 
 const wasmBytes = await fs.readFile(path.join(vscodeDir, "out/tinymist_bg.wasm"));
+const assetLock = JSON.parse(
+  await fs.readFile(path.join(root, "target", "wasm-assets", "wasm-assets.lock.json"), "utf8"),
+);
+async function listBundledFiles(directory) {
+  const files = [];
+  async function visit(current) {
+    for (const entry of await fs.readdir(current, { withFileTypes: true })) {
+      const absolute = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await visit(absolute);
+      } else if (entry.isFile()) {
+        files.push(absolute);
+      }
+    }
+  }
+  await visit(directory);
+  return files;
+}
+const packageFiles = await listBundledFiles(path.join(root, "target", "wasm-assets", "packages"));
+const fontFiles = await listBundledFiles(path.join(root, "target", "wasm-assets", "fonts"));
+for (const assetPath of [...packageFiles, ...fontFiles]) {
+  const assetBytes = await fs.readFile(assetPath);
+  assert.ok(
+    assetBytes.length > 0 && wasmBytes.includes(assetBytes),
+    `WASM module does not contain bundled asset bytes from ${path.relative(root, assetPath)}`,
+  );
+}
+if (assetLock.packages.length > 0) {
+  assert.ok(
+    wasmBytes.includes(Buffer.from("/tinymist-wasm-assets/packages")),
+    "WASM module is missing the embedded package registry prefix",
+  );
+}
 for (const marker of ["tinymist-preview-frame", "browserTransport"]) {
   assert.ok(
     wasmBytes.includes(Buffer.from(marker)),

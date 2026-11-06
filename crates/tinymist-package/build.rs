@@ -67,7 +67,7 @@ fn main() {
                         assert!(version_dir.is_dir(), "package version must be a directory");
                         let version = version_dir.file_name().unwrap().to_string_lossy().to_string();
                         roots.push((namespace.clone(), name.clone(), version));
-                        visit_files(&version_dir, &version_dir, &mut files);
+                        visit_files(&packages_dir, &version_dir, &mut files);
                     }
                 }
             }

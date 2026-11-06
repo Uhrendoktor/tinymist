@@ -109,7 +109,7 @@ impl PackageRegistry for JsRegistry {
         let name = spec.name.to_string();
         let version = spec.version.to_string();
         let is_embedded = wasm_assets::PACKAGE_ROOTS.iter().any(|(ns, pkg, ver)| {
-            *ns == namespace && *pkg == name && *ver == version
+            *ns == namespace.as_str() && *pkg == name.as_str() && *ver == version.as_str()
         });
         if is_embedded {
             let root = format!(
