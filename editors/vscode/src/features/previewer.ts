@@ -131,6 +131,17 @@ export function getConfiguredPreviewer(): string | undefined {
   );
 }
 
+/**
+ * Browser-hosted Tinymist always uses the previewer compiled into its WASM asset.
+ * Native hosts preserve the user's configured previewer selection.
+ */
+export function previewerProviderForHost(
+  configuredProvider: string | undefined,
+  browserTransport: boolean,
+): string | undefined {
+  return browserTransport ? undefined : configuredProvider;
+}
+
 export function getConfiguredPreviewTarget(): PreviewTarget {
   return normalizePreviewTarget(
     vscode.workspace.getConfiguration("tinymist").get<string>("exportTarget"),
@@ -191,7 +202,7 @@ export async function resolvePreviewer(
   // and renderer embedded in Tinymist's own WASM package. Custom HTML and
   // extension-provided previewers may depend on external servers, Node APIs,
   // or their own assets, so they must not replace the bundled renderer.
-  const provider = browserTransport ? undefined : configuredProvider;
+  const provider = previewerProviderForHost(configuredProvider, browserTransport);
   const previewTarget = getConfiguredPreviewTarget();
   const builtinPreviewerId = String(context.extension?.id ?? DEFAULT_PREVIEWER_EXTENSION_ID);
   const cacheKey = JSON.stringify({
