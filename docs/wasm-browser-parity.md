@@ -102,6 +102,11 @@ The current branch milestone now includes:
 - A VS Code Webview bridge that preserves the existing preview frontend's WebSocket-shaped API and binary incremental-render protocol. The browser preview commands and lifecycle/disposal path are enabled in the web extension.
 - Browser export commands enabled in the web extension. Export bytes are requested in memory and persisted through `vscode.workspace.fs` rather than a native file writer.
 - Unit tests for text, binary, ping, and pong frame round-trips and malformed base64 rejection.
+- The browser frontend is rebuilt before the WASM module, so the embedded `TYPST_PREVIEW_HTML` matches the frontend bridge shipped in the extension.
+- The build verifies the browser-bridge markers in generated HTML and again in the packaged WASM bytes.
+- The WebSocket shim is activated only for Webviews explicitly marked `browserTransport`; native VS Code previews retain their real WebSocket.
+- Browser preview selection is forced through Tinymist's bundled provider, with a focused Vitest test proving that custom providers are ignored in browser mode and preserved in native mode.
+- The browser preview command does not request a localhost data-plane listener.
 
 **Scope clarification for PR #1 (2026-11-06): bundled-only preview.** The WASM extension uses only the preview HTML compiled into Tinymist's own WASM asset and the embedded fonts shipped by Tinymist. It ignores configured custom preview providers, does not load third-party preview extensions or external HTML, and does not start or connect to localhost HTTP/WebSocket servers. Workspace/user fonts and external `@preview` package resolution remain unsupported in this browser build; those are explicit platform limits for this milestone, not reasons to add a second preview implementation.
 
