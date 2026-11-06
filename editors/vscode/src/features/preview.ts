@@ -3,6 +3,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import {
+  base64Encode,
   DisposeList,
   getSensibleTextEditorColumn,
   getTargetViewColumn,
@@ -460,7 +461,7 @@ export async function openPreviewInWebView({
 
   // Determines arguments for the preview HTML.
   const previewMode = task.mode === "doc" ? "Doc" : "Slide";
-  const previewStateEncoded = Buffer.from(JSON.stringify(previewState), "utf-8").toString("base64");
+  const previewStateEncoded = base64Encode(JSON.stringify(previewState));
 
   // Substitutes arguments in the HTML content.
   let html = rewritePreviewAssetRoot(previewer, panel.webview);
