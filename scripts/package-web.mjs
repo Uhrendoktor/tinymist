@@ -29,6 +29,14 @@ for (const relativePath of requiredFiles) {
   });
 }
 
+const wasmBytes = await fs.readFile(path.join(vscodeDir, "out/tinymist_bg.wasm"));
+for (const marker of ["tinymist-preview-frame", "browserTransport"]) {
+  assert.ok(
+    wasmBytes.includes(Buffer.from(marker)),
+    `WASM module does not contain bundled preview bridge marker: ${marker}`,
+  );
+}
+
 await fs.rm(stageDir, { recursive: true, force: true });
 await fs.mkdir(stageDir, { recursive: true });
 await fs.cp(vscodeDir, stageDir, {
