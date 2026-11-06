@@ -43,7 +43,7 @@ The missing capabilities are deliberate feature omissions and native transport a
 
 ### C. Add a message-port preview data plane
 
-- Introduce a browser transport that adapts the existing `WsMessage` data plane to a JS `MessagePort`/Worker message bridge.
+- Introduce a browser transport that adapts the existing `WsMessage` data plane to task-scoped LSP notifications and VS Code Webview messages.
 - Connect the extension host to the WASM Worker and the VS Code Webview through a scoped, per-preview channel. The webview must not attempt to reach localhost or expose a listening port.
 - Keep the existing preview protocol and actors. In particular, preserve initial full state, incremental diff frames, partial-rendering negotiation, outline messages, source-to-document jumps, document-to-source jumps, scroll synchronization, viewer window state, multiple preview task IDs, and disposal.
 - Authenticate/associate every bridge with its preview task ID; close ports and stop actors when a panel is disposed. Do not accept arbitrary messages from unrelated webviews.
@@ -56,14 +56,14 @@ The missing capabilities are deliberate feature omissions and native transport a
 
 ### E. Enable features incrementally and by capability
 
-- Turn on preview only after the message-port preview path is compiled and integration-tested.
-- Turn on export after binary responses can be written through VS Code's workspace filesystem; do not enable task runners or process-backed commands that still require child processes.
+- Turn on preview only after the browser LSP notification tunnel and Webview bridge are implemented; retain a draft/release gate until the runtime path is integration-tested.
+- Turn on export only after binary responses can be written through VS Code's workspace filesystem; do not enable task runners or process-backed commands that still require child processes.
 - Re-enable web-compatible UI (outline, labels, package docs, symbol tools, language features) individually after removing Node-only imports and supplying browser equivalents.
 - Keep native-only operations (shell/process invocation, opening files with external applications, OS font enumeration, native file watchers, TCP services, and process-backed debugging) disabled or provide an explicit browser implementation. Do not advertise them as supported merely because the WASM crate compiles.
 
 ### F. Validate the browser distribution in CI
 
-- Build the Rust WASM server with the browser preview feature.
+- Build the Rust WASM server with the browser preview and export feature combination.
 - Build the web extension bundles and browser-only VSIX.
 - Inspect the packaged VSIX manifest and file list to ensure no `main` entry or native executable is present.
 - Run existing Rust and VS Code tests plus targeted transport/protocol tests. Add an end-to-end test for multiple pages and for incremental updates after editing a source file.
@@ -91,12 +91,16 @@ This document records the intended architecture and acceptance boundary. Individ
 
 ## Current branch milestone (2026-11-06)
 
-The first implementation increment now:
+The current branch milestone now includes:
 
-- Adds a second esbuild entry for `src/web/server.ts`, producing `out/web-server.js` and bundling the wasm-bindgen module into the worker.
-- Adds a separately staged browser VSIX. Its manifest has `browser` but no `main`; it removes npm runtime dependencies and native executable/debug files. The packager verifies the VSIX archive contents before returning success.
-- Adds a CI job that builds the WASM extension, creates the browser VSIX, and uploads the artifact.
-- Adds Cargo feature boundaries for `preview-core` and `preview-web`. The WebAssembly build compiles the preview actor crate without the native Hyper/TCP dependencies.
-- Makes Tokio's `rt-multi-thread` feature conditional on non-WASM targets; the preview crate explicitly requests the browser-compatible `rt`, `sync`, and `time` features.
+- A second esbuild entry for `src/web/server.ts`, producing `out/web-server.js` and bundling the wasm-bindgen module into the Worker.
+- A separately staged browser VSIX. Its manifest has `browser` but no `main`; it removes npm runtime dependencies and native executable/debug files. The packager verifies the VSIX archive contents.
+- A CI job to build the browser WASM/VSIX artifact, plus a push trigger for `wasm/**` branches.
+- Cargo feature boundaries for `preview-core`, `preview`, and `preview-web`. Browser preview uses the existing render/editor/outline actors without the native Hyper/TCP server dependencies.
+- Tokio's `rt-multi-thread` enabled only on non-WASM targets. The preview crate requests `rt`, `sync`, and `time` for the single-threaded browser runtime; shared renderer dependencies are available on WASM too.
+- A task-scoped browser preview data plane. Rust adapts the preview actor's existing `WsMessage` stream to `tinymist/preview/serverMessage` and routes client frames from `tinymist/preview/clientMessage` back to the matching preview task.
+- A VS Code Webview bridge that preserves the existing preview frontend's WebSocket-shaped API and binary incremental-render protocol. The browser preview commands and lifecycle/disposal path are enabled in the web extension.
+- Browser export commands enabled in the web extension. Export bytes are requested in memory and persisted through `vscode.workspace.fs` rather than a native file writer.
+- Unit tests for text, binary, ping, and pong frame round-trips and malformed base64 rejection.
 
-**Not yet implemented:** the browser-specific preview LSP state and data plane are not wired to the VS Code Webview. The current preview command still belongs to the native `preview` feature and still assumes a localhost HTTP/WebSocket server. The web package therefore remains a browser-hosted LSP milestone, not full preview parity. Package registry population, local package storage, user/workspace font loading, and file export through `vscode.workspace.fs` also remain open. Do not mark the preview acceptance criteria complete until a webview can render multiple pages and receive incremental updates through the browser bridge.
+**Still outstanding:** the browser registry resolver deliberately returns no package path; `JsRegistry::packages()` and local package/cache paths are empty. The browser font searcher currently uses embedded fonts and its web-font loading API is not wired to a VS Code/browser font provider. The preview bridge has not yet been proven in a running VS Code Web Extension Host with multi-page rendering, incremental updates, outline/source/scroll synchronization, or disposal. The browser VSIX build job is defined, but this branch has no confirmed exact-head Actions result yet. Keep this PR in draft until those package/font adapters and runtime checks are complete.
