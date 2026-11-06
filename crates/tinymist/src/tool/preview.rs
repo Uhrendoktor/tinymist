@@ -928,6 +928,12 @@ mod browser_preview_tests {
     use tinymist_preview::WsMessage;
 
     fn assert_round_trip(frame: WsMessage) {
+        let expected = match &frame {
+            WsMessage::Text(text) => WsMessage::Text(text.clone()),
+            WsMessage::Binary(bytes) => WsMessage::Binary(bytes.clone()),
+            WsMessage::Ping(bytes) => WsMessage::Ping(bytes.clone()),
+            WsMessage::Pong(bytes) => WsMessage::Pong(bytes.clone()),
+        };
         let encoded = BrowserPreviewDataMessage::from_ws_message("preview-1".to_owned(), frame);
         assert_eq!(encoded.task_id, "preview-1");
 
@@ -936,7 +942,7 @@ mod browser_preview_tests {
             serde_json::from_value(wire).expect("frame should deserialize");
         assert_eq!(decoded.task_id, "preview-1");
 
-        match (frame, decoded.into_ws_message().expect("frame should decode")) {
+        match (expected, decoded.into_ws_message().expect("frame should decode")) {
             (WsMessage::Text(expected), WsMessage::Text(actual)) => assert_eq!(actual, expected),
             (WsMessage::Binary(expected), WsMessage::Binary(actual)) => assert_eq!(actual, expected),
             (WsMessage::Ping(expected), WsMessage::Ping(actual)) => assert_eq!(actual, expected),
