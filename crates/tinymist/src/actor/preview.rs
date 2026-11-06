@@ -1,14 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
+#[cfg(feature = "preview")]
+use crate::tool::preview::HttpServer;
 use lsp_types::notification::Notification;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sync_ls::{internal_error, LspClient, LspResult};
-use tinymist_preview::{ControlPlaneMessage, Previewer};
 #[cfg(feature = "preview-web")]
 use tinymist_preview::WsMessage;
 #[cfg(feature = "preview")]
-use crate::tool::preview::HttpServer;
+use tinymist_preview::{ControlPlaneMessage, Previewer};
 use tinymist_std::error::IgnoreLogging;
 use tokio::sync::{mpsc, oneshot};
 
@@ -81,9 +82,15 @@ impl PreviewActor {
                 }
                 #[cfg(feature = "preview-web")]
                 PreviewRequest::BrowserMessage(task_id, message) => {
-                    if let Some(input) = self.tabs.get(&task_id).and_then(|tab| tab.browser_input.as_ref()) {
+                    if let Some(input) = self
+                        .tabs
+                        .get(&task_id)
+                        .and_then(|tab| tab.browser_input.as_ref())
+                    {
                         if input.send(message).is_err() {
-                            log::debug!("PreviewTask({task_id}): browser client message dropped after close");
+                            log::debug!(
+                                "PreviewTask({task_id}): browser client message dropped after close"
+                            );
                         }
                     }
                 }

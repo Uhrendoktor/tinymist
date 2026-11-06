@@ -23,15 +23,18 @@ use tinymist_std::fs::paths::write_atomic;
 use tinymist_std::path::PathClean;
 use tinymist_std::typst::TypstDocument;
 use tinymist_task::{
-    output_template, pdf_options, DocumentQuery, ExportBundleTask, ExportMarkdownTask,
-    ExportPngTask, ExportSvgTask, ExportTarget, ImageOutput, PathPattern, PdfExport, PngExport,
-    SvgExport, TextExport,
+    output_template, pdf_options, DocumentQuery, ExportMarkdownTask, ExportPngTask, ExportSvgTask,
+    ExportTarget, ImageOutput, PathPattern, PdfExport, PngExport, SvgExport, TextExport,
 };
+#[cfg(feature = "system")]
+use tinymist_task::ExportBundleTask;
 use tokio::sync::mpsc;
 use typlite::{Format, Typlite};
+#[cfg(feature = "system")]
 use typst::diag::Warned;
 use typst::ecow::EcoString;
 use typst::foundations::Repr;
+#[cfg(feature = "system")]
 use typst_bundle::{Bundle, BundleOptions, VirtualFs};
 
 use futures::Future;
@@ -40,13 +43,13 @@ use rayon::Scope;
 
 use super::SyncTaskFactory;
 use crate::lsp::query::QueryFuture;
+#[cfg(feature = "system")]
+use crate::project::{update_lock, ApplyProjectTask, PROJECT_ROUTE_USER_ACTION_PRIORITY};
 use crate::project::{
     CompiledArtifact, DevEvent, DevExportEvent, EntryReader, ExportHtmlTask, ExportPdfTask,
     ExportTask as ProjectExportTask, ExportTeXTask, ExportTextTask, LspCompiledArtifact,
     LspComputeGraph, ProjectClient, ProjectTask, TaskWhen,
 };
-#[cfg(feature = "system")]
-use crate::project::{update_lock, ApplyProjectTask, PROJECT_ROUTE_USER_ACTION_PRIORITY};
 use crate::world::TaskInputs;
 use crate::ServerState;
 use crate::{actor::editor::EditorRequest, tool::word_count};
@@ -463,6 +466,7 @@ impl ExportTask {
                         .collect(),
                 }
             }
+            #[cfg(feature = "system")]
             ExportArtifact::Bundle { .. } => {
                 bail!("cannot export bundle to memory")
             }
@@ -486,7 +490,6 @@ impl ExportTask {
         }
         #[cfg(feature = "system")]
         {
-
             let CompiledArtifact { graph, .. } = &artifact;
 
             let Some(write_to) = Self::prepare_output_path(&task, graph)? else {
@@ -542,8 +545,9 @@ impl ExportTask {
                     res
                 }
                 ExportArtifact::Paged { total_pages, items } => {
-                    let can_handle_multiple =
-                        output_template::has_indexable_template(write_to.to_str().unwrap_or_default());
+                    let can_handle_multiple = output_template::has_indexable_template(
+                        write_to.to_str().unwrap_or_default(),
+                    );
 
                     if !can_handle_multiple && items.len() > 1 {
                         bail!("cannot export multiple images without a page number template ({{p}}, {{0p}}) in the output path");
@@ -583,9 +587,11 @@ impl ExportTask {
                         items: res_items,
                     }
                 }
+                #[cfg(feature = "system")]
                 ExportArtifact::Bundle { items } => {
                     let root = write_to.clone();
-                    let fut = tokio::task::spawn_blocking(move || write_bundle_files(&root, &items));
+                    let fut =
+                        tokio::task::spawn_blocking(move || write_bundle_files(&root, &items));
                     fut.await.context_ut("failed to export")??;
 
                     OnExportResponse::Single {
@@ -612,6 +618,7 @@ impl ExportTask {
             graph, doc, diag, ..
         } = artifact;
 
+        #[cfg(feature = "system")]
         if let ExportBundle(config) = task {
             return FutureFolder::compute(move |_| export_bundle_artifact(&graph, &config)).await?;
         }
@@ -674,7 +681,10 @@ impl ExportTask {
                     typst_html::html(html_doc()?, &typst_html::HtmlOptions::default())
                         .map_err(|e| format!("export error: {e:?}"))
                         .context_ut("failed to export to html")?.into(),
+                #[cfg(feature = "system")]
                 ExportBundle(..) => unreachable!(),
+                #[cfg(not(feature = "system"))]
+                ExportBundle(..) => bail!("bundle export is unavailable in browser builds"),
                 ExportSvgHtml(ExportHtmlTask { export: _ }) =>
                     reflexo_vec2svg::render_svg_html::<DefaultExportFeature>(paged_doc()?).into(),
                 ExportText(ExportTextTask { export: _ }) => TextExport::run_on_doc(doc)?.into(),
@@ -725,6 +735,7 @@ enum ExportArtifact {
         total_pages: usize,
         items: Vec<(usize, Bytes)>,
     },
+    #[cfg(feature = "system")]
     Bundle {
         items: Vec<(PathBuf, Bytes)>,
     },
@@ -779,6 +790,7 @@ impl WithPages for ImageOutput<String> {
     }
 }
 
+#[cfg(feature = "system")]
 fn export_bundle_artifact(
     graph: &LspComputeGraph,
     config: &ExportBundleTask,
@@ -827,6 +839,7 @@ fn export_bundle_artifact(
     })
 }
 
+#[cfg(feature = "system")]
 fn collect_bundle_files(fs: &VirtualFs) -> Result<Vec<(PathBuf, Bytes)>> {
     fs.iter()
         .map(|(path, data)| {

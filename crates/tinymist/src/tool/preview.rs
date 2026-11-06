@@ -10,7 +10,10 @@ mod http;
 
 use std::{collections::HashMap, path::Path, sync::Arc};
 #[cfg(feature = "preview-web")]
-use std::{pin::Pin, task::{Context, Poll}};
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use clap::{Parser, ValueEnum};
 #[cfg(feature = "preview")]
@@ -25,14 +28,14 @@ use serde_json::Value as JsonValue;
 use sync_ls::just_ok;
 #[cfg(feature = "preview")]
 use tinymist_assets::TYPST_PREVIEW_HTML;
-use tinymist_preview::{
-    ControlPlaneMessage, ControlPlaneRx, ControlPlaneTx, DocToSrcJumpInfo,
-    PreviewBuilder, PreviewConfig, PreviewMode, ViewerWindowState, WsMessage,
-};
-#[cfg(feature = "preview")]
-use tinymist_preview::Previewer;
 #[cfg(feature = "preview")]
 use tinymist_preview::frontend_html;
+#[cfg(feature = "preview")]
+use tinymist_preview::Previewer;
+use tinymist_preview::{
+    ControlPlaneMessage, ControlPlaneRx, ControlPlaneTx, DocToSrcJumpInfo, PreviewBuilder,
+    PreviewConfig, PreviewMode, ViewerWindowState, WsMessage,
+};
 use tinymist_query::{LspPosition, LspRange};
 use tinymist_std::error::IgnoreLogging;
 use tinymist_task::ExportTarget;
@@ -562,7 +565,8 @@ impl PreviewState {
                 let task_id = output_task_id;
                 browser_message_handle.spawn(async move {
                     while let Some(message) = browser_output_rx.recv().await {
-                        let params = BrowserPreviewDataMessage::from_ws_message(task_id.clone(), message);
+                        let params =
+                            BrowserPreviewDataMessage::from_ws_message(task_id.clone(), message);
                         client.send_notification::<BrowserPreviewServerMessage>(&params);
                     }
                 });
@@ -667,6 +671,7 @@ impl PreviewState {
         just_ok(JsonValue::Null)
     }
 
+    /// Forwards an incoming data-plane frame to the requested preview task.
     #[cfg(feature = "preview-web")]
     pub fn browser_message(&self, task_id: String, message: WsMessage) -> LspResult<()> {
         self.preview_tx
@@ -783,25 +788,31 @@ pub fn bind_streams(
     );
 }
 
-
 /// Message tunneled between the VS Code Webview and the browser preview data-plane.
 #[cfg(feature = "preview-web")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserPreviewDataMessage {
+    /// Identifier of the preview task associated with this frame.
     pub task_id: String,
+    /// WebSocket frame type represented by the payload.
     pub kind: BrowserPreviewMessageKind,
     /// Text is UTF-8; binary, ping and pong payloads are base64 encoded.
     pub data: String,
 }
 
 #[cfg(feature = "preview-web")]
+/// WebSocket frame types supported by the browser preview bridge.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BrowserPreviewMessageKind {
+    /// UTF-8 text frame.
     Text,
+    /// Binary frame with a base64-encoded payload.
     Binary,
+    /// Ping control frame with a base64-encoded payload.
     Ping,
+    /// Pong control frame with a base64-encoded payload.
     Pong,
 }
 
@@ -824,26 +835,40 @@ impl BrowserPreviewDataMessage {
                 STANDARD.encode(bytes.as_ref()),
             ),
         };
-        Self { task_id, kind, data }
+        Self {
+            task_id,
+            kind,
+            data,
+        }
     }
 
     fn into_ws_message(self) -> Result<WsMessage, String> {
         use base64::{engine::general_purpose::STANDARD, Engine as _};
         Ok(match self.kind {
             BrowserPreviewMessageKind::Text => WsMessage::Text(self.data),
-            BrowserPreviewMessageKind::Binary => {
-                WsMessage::Binary(STANDARD.decode(self.data).map_err(|err| err.to_string())?.into())
-            }
-            BrowserPreviewMessageKind::Ping => {
-                WsMessage::Ping(STANDARD.decode(self.data).map_err(|err| err.to_string())?.into())
-            }
-            BrowserPreviewMessageKind::Pong => {
-                WsMessage::Pong(STANDARD.decode(self.data).map_err(|err| err.to_string())?.into())
-            }
+            BrowserPreviewMessageKind::Binary => WsMessage::Binary(
+                STANDARD
+                    .decode(self.data)
+                    .map_err(|err| err.to_string())?
+                    .into(),
+            ),
+            BrowserPreviewMessageKind::Ping => WsMessage::Ping(
+                STANDARD
+                    .decode(self.data)
+                    .map_err(|err| err.to_string())?
+                    .into(),
+            ),
+            BrowserPreviewMessageKind::Pong => WsMessage::Pong(
+                STANDARD
+                    .decode(self.data)
+                    .map_err(|err| err.to_string())?
+                    .into(),
+            ),
         })
     }
 }
 
+/// Webview-to-worker notification carrying a preview data-plane frame.
 #[cfg(feature = "preview-web")]
 pub struct BrowserPreviewClientMessage;
 #[cfg(feature = "preview-web")]
@@ -852,6 +877,7 @@ impl Notification for BrowserPreviewClientMessage {
     const METHOD: &'static str = "tinymist/preview/clientMessage";
 }
 
+/// Worker-to-Webview notification carrying a preview data-plane frame.
 #[cfg(feature = "preview-web")]
 pub struct BrowserPreviewServerMessage;
 #[cfg(feature = "preview-web")]
@@ -870,11 +896,11 @@ struct BrowserPreviewDataPlane {
 impl futures::Stream for BrowserPreviewDataPlane {
     type Item = Result<WsMessage, reflexo_typst::Error>;
 
-    fn poll_next(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
-        self.get_mut().incoming.poll_recv(cx).map(|message| message.map(Ok))
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.get_mut()
+            .incoming
+            .poll_recv(cx)
+            .map(|message| message.map(Ok))
     }
 }
 
@@ -882,10 +908,7 @@ impl futures::Stream for BrowserPreviewDataPlane {
 impl futures::Sink<WsMessage> for BrowserPreviewDataPlane {
     type Error = reflexo_typst::Error;
 
-    fn poll_ready(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
@@ -896,17 +919,11 @@ impl futures::Sink<WsMessage> for BrowserPreviewDataPlane {
             .map_err(|_| error_once!("browser preview Webview disconnected"))
     }
 
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn poll_close(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 }
@@ -995,13 +1012,17 @@ mod browser_preview_transport_tests {
             incoming_tx
                 .send(WsMessage::Text("client-frame".to_owned()))
                 .expect("input receiver is open");
-            assert!(matches!(plane.next().await, Some(Ok(WsMessage::Text(text))) if text == "client-frame"));
+            assert!(
+                matches!(plane.next().await, Some(Ok(WsMessage::Text(text))) if text == "client-frame")
+            );
 
             plane
                 .send(WsMessage::Text("server-frame".to_owned()))
                 .await
                 .expect("output receiver is open");
-            assert!(matches!(outgoing_rx.recv().await, Some(WsMessage::Text(text)) if text == "server-frame"));
+            assert!(
+                matches!(outgoing_rx.recv().await, Some(WsMessage::Text(text)) if text == "server-frame")
+            );
         });
     }
 }

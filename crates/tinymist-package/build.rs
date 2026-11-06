@@ -53,8 +53,15 @@ fn main() {
             namespaces.sort();
 
             for namespace_dir in namespaces {
-                assert!(namespace_dir.is_dir(), "package namespace must be a directory");
-                let namespace = namespace_dir.file_name().unwrap().to_string_lossy().to_string();
+                assert!(
+                    namespace_dir.is_dir(),
+                    "package namespace must be a directory"
+                );
+                let namespace = namespace_dir
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
                 let mut names = fs::read_dir(&namespace_dir)
                     .expect("cannot read package namespace")
                     .map(|entry| entry.expect("cannot read package entry").path())
@@ -88,9 +95,8 @@ fn main() {
     roots.sort();
     files.sort_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
 
-    let mut generated = String::from(
-        "pub(crate) static PACKAGE_ROOTS: &[(&str, &str, &str)] = &[\n",
-    );
+    let mut generated =
+        String::from("pub(crate) static PACKAGE_ROOTS: &[(&str, &str, &str)] = &[\n");
     for (namespace, name, version) in roots {
         generated.push_str(&format!("    ({namespace:?}, {name:?}, {version:?}),\n"));
     }
