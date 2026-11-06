@@ -920,3 +920,47 @@ impl ServerState {
         self.preview.browser_message(task_id, message)
     }
 }
+
+#[cfg(all(test, feature = "preview-web"))]
+mod browser_preview_tests {
+    use super::{BrowserPreviewDataMessage, BrowserPreviewMessageKind};
+    use bytes::Bytes;
+    use tinymist_preview::WsMessage;
+
+    fn assert_round_trip(frame: WsMessage) {
+        let encoded = BrowserPreviewDataMessage::from_ws_message("preview-1".to_owned(), frame);
+        assert_eq!(encoded.task_id, "preview-1");
+
+        let wire = serde_json::to_value(&encoded).expect("frame should serialize");
+        let decoded: BrowserPreviewDataMessage =
+            serde_json::from_value(wire).expect("frame should deserialize");
+        assert_eq!(decoded.task_id, "preview-1");
+
+        match (frame, decoded.into_ws_message().expect("frame should decode")) {
+            (WsMessage::Text(expected), WsMessage::Text(actual)) => assert_eq!(actual, expected),
+            (WsMessage::Binary(expected), WsMessage::Binary(actual)) => assert_eq!(actual, expected),
+            (WsMessage::Ping(expected), WsMessage::Ping(actual)) => assert_eq!(actual, expected),
+            (WsMessage::Pong(expected), WsMessage::Pong(actual)) => assert_eq!(actual, expected),
+            _ => panic!("browser frame type changed during serialization"),
+        }
+    }
+
+    #[test]
+    fn browser_data_plane_round_trips_every_frame_kind() {
+        assert_round_trip(WsMessage::Text("current".to_owned()));
+        assert_round_trip(WsMessage::Binary(Bytes::from_static(b"svg,\x00\x01")));
+        assert_round_trip(WsMessage::Ping(Bytes::from_static(b"ping")));
+        assert_round_trip(WsMessage::Pong(Bytes::from_static(b"pong")));
+    }
+
+    #[test]
+    fn browser_data_plane_rejects_invalid_binary_payloads() {
+        let frame = BrowserPreviewDataMessage {
+            task_id: "preview-1".to_owned(),
+            kind: BrowserPreviewMessageKind::Binary,
+            data: "not base64!".to_owned(),
+        };
+
+        assert!(frame.into_ws_message().is_err());
+    }
+}
