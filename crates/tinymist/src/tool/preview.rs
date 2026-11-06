@@ -1,15 +1,24 @@
 //! Document preview tool for Typst
 
 pub use compile::{PreviewCompileView, ProjectPreviewHandler};
+#[cfg(feature = "preview")]
 pub use http::{make_http_server, HttpServer};
 
 mod compile;
+#[cfg(feature = "preview")]
 mod http;
 
 use std::{collections::HashMap, path::Path, sync::Arc};
+#[cfg(feature = "preview-web")]
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use clap::{Parser, ValueEnum};
+#[cfg(feature = "preview")]
 use futures::{SinkExt, TryStreamExt};
+#[cfg(feature = "preview")]
 use hyper_tungstenite::{tungstenite::Message, HyperWebsocket, HyperWebsocketStream};
 use lsp_types::notification::Notification;
 use lsp_types::Url;
@@ -17,10 +26,15 @@ use reflexo_typst::error::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sync_ls::just_ok;
+#[cfg(feature = "preview")]
 use tinymist_assets::TYPST_PREVIEW_HTML;
+#[cfg(feature = "preview")]
+use tinymist_preview::frontend_html;
+#[cfg(feature = "preview")]
+use tinymist_preview::Previewer;
 use tinymist_preview::{
-    frontend_html, ControlPlaneMessage, ControlPlaneRx, ControlPlaneTx, DocToSrcJumpInfo,
-    PreviewBuilder, PreviewConfig, PreviewMode, Previewer, ViewerWindowState, WsMessage,
+    ControlPlaneMessage, ControlPlaneRx, ControlPlaneTx, DocToSrcJumpInfo, PreviewBuilder,
+    PreviewConfig, PreviewMode, ViewerWindowState, WsMessage,
 };
 use tinymist_query::{LspPosition, LspRange};
 use tinymist_std::error::IgnoreLogging;
@@ -462,7 +476,12 @@ impl PreviewState {
             mut shutdown_rx,
         } = lsp_rx;
 
+        #[cfg(feature = "preview")]
         let (websocket_tx, websocket_rx) = mpsc::unbounded_channel();
+        #[cfg(feature = "preview-web")]
+        let (browser_input_tx, browser_input_rx) = mpsc::unbounded_channel::<WsMessage>();
+        #[cfg(feature = "preview-web")]
+        let (browser_output_tx, mut browser_output_rx) = mpsc::unbounded_channel::<WsMessage>();
 
         let previewer = previewer.build(lsp_tx, compile_handler.clone());
 
@@ -519,50 +538,92 @@ impl PreviewState {
         });
 
         let preview_tx = self.preview_tx.clone();
+        #[cfg(feature = "preview-web")]
+        let browser_message_client = self.client.clone();
+        #[cfg(feature = "preview-web")]
+        let browser_message_handle = self.client.handle.clone();
+        #[cfg(feature = "preview-web")]
+        let output_task_id = task_id.clone();
         just_future(async move {
             let mut previewer = previewer.await;
+            #[cfg(feature = "preview")]
             bind_streams(&mut previewer, websocket_rx);
+            #[cfg(feature = "preview-web")]
+            {
+                let stream = BrowserPreviewDataPlane {
+                    incoming: browser_input_rx,
+                    outgoing: browser_output_tx,
+                };
+                let (stream_tx, stream_rx) = mpsc::unbounded_channel();
+                stream_tx
+                    .send(std::future::ready(stream))
+                    .map_err(|_| internal_error("failed to initialize browser preview stream"))?;
+                drop(stream_tx);
+                previewer.start_data_plane(stream_rx, |conn| Ok(conn));
+
+                let client = browser_message_client;
+                let task_id = output_task_id;
+                browser_message_handle.spawn(async move {
+                    while let Some(message) = browser_output_rx.recv().await {
+                        let params =
+                            BrowserPreviewDataMessage::from_ws_message(task_id.clone(), message);
+                        client.send_notification::<BrowserPreviewServerMessage>(&params);
+                    }
+                });
+            }
 
             // Put a fence to ensure the previewer can receive the first compilation.
             // The fence must be put after the previewer is initialized.
             compile_handler.flush_compile();
 
-            // Replace the data plane port in the html to self
-            let page_title = resolve_page_title(
-                args.preview.page_title.as_deref(),
-                args.compile.input.as_deref(),
-            );
-            let frontend_html = frontend_html(
-                TYPST_PREVIEW_HTML,
-                args.preview.preview_mode,
-                "/",
-                &page_title,
-            );
-
-            let srv = make_http_server(frontend_html, args.data_plane_host, websocket_tx).await;
-            let addr = srv.addr;
-            log::info!(
-                target: crate::PREVIEW_COMPAT_LOG_TARGET,
-                "PreviewTask({task_id}): preview server listening on: {addr}"
-            );
-
+            #[cfg(feature = "preview")]
+            let (srv, resp) = {
+                // Native builds serve the existing preview frontend over HTTP/WebSocket.
+                let page_title = resolve_page_title(
+                    args.preview.page_title.as_deref(),
+                    args.compile.input.as_deref(),
+                );
+                let frontend_html = frontend_html(
+                    TYPST_PREVIEW_HTML,
+                    args.preview.preview_mode,
+                    "/",
+                    &page_title,
+                );
+                let srv = make_http_server(frontend_html, args.data_plane_host, websocket_tx).await;
+                let addr = srv.addr;
+                log::info!(
+                    target: crate::PREVIEW_COMPAT_LOG_TARGET,
+                    "PreviewTask({task_id}): preview server listening on: {addr}"
+                );
+                let resp = StartPreviewResponse {
+                    static_server_port: Some(addr.port()),
+                    static_server_addr: Some(addr.to_string()),
+                    data_plane_port: Some(addr.port()),
+                    is_primary,
+                };
+                (srv, resp)
+            };
+            #[cfg(feature = "preview-web")]
             let resp = StartPreviewResponse {
-                static_server_port: Some(addr.port()),
-                static_server_addr: Some(addr.to_string()),
-                data_plane_port: Some(addr.port()),
+                static_server_port: None,
+                static_server_addr: None,
+                data_plane_port: None,
                 is_primary,
             };
 
-            #[cfg(feature = "open")]
+            #[cfg(all(feature = "preview", feature = "open"))]
             if open_in_browser {
-                open::that_detached(format!("http://127.0.0.1:{}", addr.port()))
+                open::that_detached(format!("http://127.0.0.1:{}", srv.addr.port()))
                     .log_error("failed to open browser for preview");
             }
 
             let sent = preview_tx.send(PreviewRequest::Started(PreviewTab {
                 task_id,
                 previewer,
+                #[cfg(feature = "preview")]
                 srv,
+                #[cfg(feature = "preview-web")]
+                browser_input: Some(browser_input_tx),
                 ctl_tx,
                 compile_handler,
                 is_primary,
@@ -608,6 +669,14 @@ impl PreviewState {
         sent.map_err(|_| internal_error("failed to send scroll request"))?;
 
         just_ok(JsonValue::Null)
+    }
+
+    /// Forwards an incoming data-plane frame to the requested preview task.
+    #[cfg(feature = "preview-web")]
+    pub fn browser_message(&self, task_id: String, message: WsMessage) -> LspResult<()> {
+        self.preview_tx
+            .send(PreviewRequest::BrowserMessage(task_id, message))
+            .map_err(|_| internal_error("failed to forward browser preview message"))
     }
 }
 
@@ -655,7 +724,7 @@ fn send_show_document(client: &TypedLspClient<PreviewState>, s: &DocToSrcJumpInf
     };
 
     // todo: resolve uri if any
-    let uri = match Url::from_file_path(Path::new(&s.filepath)) {
+    let uri = match Url::parse(&format!("file://{}", s.filepath)) {
         Ok(uri) => uri,
         Err(e) => {
             log::error!(
@@ -681,6 +750,7 @@ fn send_show_document(client: &TypedLspClient<PreviewState>, s: &DocToSrcJumpInf
     );
 }
 
+#[cfg(feature = "preview")]
 /// Bind the hyper websocket streams to the previewer.
 pub fn bind_streams(
     previewer: &mut Previewer,
@@ -716,4 +786,243 @@ pub fn bind_streams(
                 }))
         },
     );
+}
+
+/// Message tunneled between the VS Code Webview and the browser preview data-plane.
+#[cfg(feature = "preview-web")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserPreviewDataMessage {
+    /// Identifier of the preview task associated with this frame.
+    pub task_id: String,
+    /// WebSocket frame type represented by the payload.
+    pub kind: BrowserPreviewMessageKind,
+    /// Text is UTF-8; binary, ping and pong payloads are base64 encoded.
+    pub data: String,
+}
+
+#[cfg(feature = "preview-web")]
+/// WebSocket frame types supported by the browser preview bridge.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowserPreviewMessageKind {
+    /// UTF-8 text frame.
+    Text,
+    /// Binary frame with a base64-encoded payload.
+    Binary,
+    /// Ping control frame with a base64-encoded payload.
+    Ping,
+    /// Pong control frame with a base64-encoded payload.
+    Pong,
+}
+
+#[cfg(feature = "preview-web")]
+impl BrowserPreviewDataMessage {
+    fn from_ws_message(task_id: String, message: WsMessage) -> Self {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let (kind, data) = match message {
+            WsMessage::Text(text) => (BrowserPreviewMessageKind::Text, text),
+            WsMessage::Binary(bytes) => (
+                BrowserPreviewMessageKind::Binary,
+                STANDARD.encode(bytes.as_ref()),
+            ),
+            WsMessage::Ping(bytes) => (
+                BrowserPreviewMessageKind::Ping,
+                STANDARD.encode(bytes.as_ref()),
+            ),
+            WsMessage::Pong(bytes) => (
+                BrowserPreviewMessageKind::Pong,
+                STANDARD.encode(bytes.as_ref()),
+            ),
+        };
+        Self {
+            task_id,
+            kind,
+            data,
+        }
+    }
+
+    fn into_ws_message(self) -> Result<WsMessage, String> {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        Ok(match self.kind {
+            BrowserPreviewMessageKind::Text => WsMessage::Text(self.data),
+            BrowserPreviewMessageKind::Binary => WsMessage::Binary(
+                STANDARD
+                    .decode(self.data)
+                    .map_err(|err| err.to_string())?
+                    .into(),
+            ),
+            BrowserPreviewMessageKind::Ping => WsMessage::Ping(
+                STANDARD
+                    .decode(self.data)
+                    .map_err(|err| err.to_string())?
+                    .into(),
+            ),
+            BrowserPreviewMessageKind::Pong => WsMessage::Pong(
+                STANDARD
+                    .decode(self.data)
+                    .map_err(|err| err.to_string())?
+                    .into(),
+            ),
+        })
+    }
+}
+
+/// Webview-to-worker notification carrying a preview data-plane frame.
+#[cfg(feature = "preview-web")]
+pub struct BrowserPreviewClientMessage;
+#[cfg(feature = "preview-web")]
+impl Notification for BrowserPreviewClientMessage {
+    type Params = BrowserPreviewDataMessage;
+    const METHOD: &'static str = "tinymist/preview/clientMessage";
+}
+
+/// Worker-to-Webview notification carrying a preview data-plane frame.
+#[cfg(feature = "preview-web")]
+pub struct BrowserPreviewServerMessage;
+#[cfg(feature = "preview-web")]
+impl Notification for BrowserPreviewServerMessage {
+    type Params = BrowserPreviewDataMessage;
+    const METHOD: &'static str = "tinymist/preview/serverMessage";
+}
+
+#[cfg(feature = "preview-web")]
+struct BrowserPreviewDataPlane {
+    incoming: mpsc::UnboundedReceiver<WsMessage>,
+    outgoing: mpsc::UnboundedSender<WsMessage>,
+}
+
+#[cfg(feature = "preview-web")]
+impl futures::Stream for BrowserPreviewDataPlane {
+    type Item = Result<WsMessage, reflexo_typst::Error>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.get_mut()
+            .incoming
+            .poll_recv(cx)
+            .map(|message| message.map(Ok))
+    }
+}
+
+#[cfg(feature = "preview-web")]
+impl futures::Sink<WsMessage> for BrowserPreviewDataPlane {
+    type Error = reflexo_typst::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: WsMessage) -> Result<(), Self::Error> {
+        self.get_mut()
+            .outgoing
+            .send(item)
+            .map_err(|_| error_once!("browser preview Webview disconnected"))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(feature = "preview-web")]
+impl ServerState {
+    pub(crate) fn browser_preview_message(
+        &mut self,
+        params: BrowserPreviewDataMessage,
+    ) -> LspResult<()> {
+        let task_id = params.task_id.clone();
+        let message = params.into_ws_message().map_err(invalid_params)?;
+        self.preview.browser_message(task_id, message)
+    }
+}
+
+#[cfg(all(test, feature = "preview-web"))]
+mod browser_preview_tests {
+    use super::{BrowserPreviewDataMessage, BrowserPreviewMessageKind};
+    use tinymist_preview::WsMessage;
+
+    fn assert_round_trip(frame: WsMessage) {
+        let expected = match &frame {
+            WsMessage::Text(text) => WsMessage::Text(text.clone()),
+            WsMessage::Binary(bytes) => WsMessage::Binary(bytes.clone()),
+            WsMessage::Ping(bytes) => WsMessage::Ping(bytes.clone()),
+            WsMessage::Pong(bytes) => WsMessage::Pong(bytes.clone()),
+        };
+        let encoded = BrowserPreviewDataMessage::from_ws_message("preview-1".to_owned(), frame);
+        assert_eq!(encoded.task_id, "preview-1");
+
+        let wire = serde_json::to_value(&encoded).expect("frame should serialize");
+        let decoded: BrowserPreviewDataMessage =
+            serde_json::from_value(wire).expect("frame should deserialize");
+        assert_eq!(decoded.task_id, "preview-1");
+
+        let actual = decoded.into_ws_message().expect("frame should decode");
+        match (expected, actual) {
+            (WsMessage::Text(expected), WsMessage::Text(actual)) => assert_eq!(actual, expected),
+            (WsMessage::Binary(expected), WsMessage::Binary(actual)) => {
+                assert_eq!(actual, expected)
+            }
+            (WsMessage::Ping(expected), WsMessage::Ping(actual)) => assert_eq!(actual, expected),
+            (WsMessage::Pong(expected), WsMessage::Pong(actual)) => assert_eq!(actual, expected),
+            _ => panic!("browser frame type changed during serialization"),
+        }
+    }
+
+    #[test]
+    fn browser_data_plane_round_trips_every_frame_kind() {
+        assert_round_trip(WsMessage::Text("current".to_owned()));
+        assert_round_trip(WsMessage::Binary("svg,\0\x01".as_bytes().to_vec().into()));
+        assert_round_trip(WsMessage::Ping(b"ping".to_vec().into()));
+        assert_round_trip(WsMessage::Pong(b"pong".to_vec().into()));
+    }
+
+    #[test]
+    fn browser_data_plane_rejects_invalid_binary_payloads() {
+        let frame = BrowserPreviewDataMessage {
+            task_id: "preview-1".to_owned(),
+            kind: BrowserPreviewMessageKind::Binary,
+            data: "not base64!".to_owned(),
+        };
+
+        assert!(frame.into_ws_message().is_err());
+    }
+}
+
+#[cfg(all(test, feature = "preview-web"))]
+mod browser_preview_transport_tests {
+    use super::BrowserPreviewDataPlane;
+    use futures::{SinkExt, StreamExt};
+    use tinymist_preview::WsMessage;
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn browser_preview_data_plane_forwards_frames_in_both_directions() {
+        futures::executor::block_on(async {
+            let (incoming_tx, incoming_rx) = mpsc::unbounded_channel();
+            let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel();
+            let mut plane = BrowserPreviewDataPlane {
+                incoming: incoming_rx,
+                outgoing: outgoing_tx,
+            };
+
+            incoming_tx
+                .send(WsMessage::Text("client-frame".to_owned()))
+                .expect("input receiver is open");
+            assert!(
+                matches!(plane.next().await, Some(Ok(WsMessage::Text(text))) if text == "client-frame")
+            );
+
+            plane
+                .send(WsMessage::Text("server-frame".to_owned()))
+                .await
+                .expect("output receiver is open");
+            assert!(
+                matches!(outgoing_rx.recv().await, Some(WsMessage::Text(text)) if text == "server-frame")
+            );
+        });
+    }
 }

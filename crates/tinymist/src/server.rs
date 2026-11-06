@@ -51,7 +51,7 @@ pub struct ServerState {
     #[cfg(feature = "lock")]
     pub route: ProjectRouteState,
     /// The preview state.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub preview: tool::preview::PreviewState,
     #[cfg(feature = "dap")]
     pub(crate) debug: crate::dap::DebugState,
@@ -129,7 +129,7 @@ impl ServerState {
         #[cfg(not(feature = "system"))]
         let dep_rx = Some(rx);
 
-        #[cfg(feature = "preview")]
+        #[cfg(any(feature = "preview", feature = "preview-web"))]
         let watchers = crate::project::ProjectPreviewState::default();
 
         let handle = Self::project(
@@ -137,7 +137,7 @@ impl ServerState {
             editor_tx.clone(),
             client.clone(),
             dep_tx.clone(),
-            #[cfg(feature = "preview")]
+            #[cfg(any(feature = "preview", feature = "preview-web"))]
             watchers.clone(),
             #[cfg(all(not(feature = "system"), feature = "web"))]
             if let TransportHost::Js { sender, .. } = client.clone().to_untyped().sender {
@@ -152,7 +152,7 @@ impl ServerState {
             debug: crate::dap::DebugState::default(),
             #[cfg(feature = "lock")]
             route: ProjectRouteState::default(),
-            #[cfg(feature = "preview")]
+            #[cfg(any(feature = "preview", feature = "preview-web"))]
             preview: tool::preview::PreviewState::new(
                 &config,
                 watchers,
@@ -227,7 +227,7 @@ impl ServerState {
                 .reload_projects()
                 .log_error("could not restart primary");
 
-            #[cfg(feature = "preview")]
+            #[cfg(any(feature = "preview", feature = "preview-web"))]
             server.background_preview();
 
             // Runs the editor actor. If the server is not running in the system, we do not
@@ -251,7 +251,7 @@ impl ServerState {
         use lsp_types::notification::*;
         use lsp_types::request::*;
 
-        #[cfg(feature = "preview")]
+        #[cfg(any(feature = "preview", feature = "preview-web"))]
         let provider = provider
             // User commands
             .with_command("tinymist.startDefaultPreview", State::default_preview)
@@ -274,6 +274,11 @@ impl ServerState {
             .with_resource("/package/by-namespace", State::resource_package_by_ns)
             .with_resource("/dir/package", State::resource_package_dirs)
             .with_resource("/dir/package/local", State::resource_local_package_dir);
+
+        #[cfg(feature = "preview-web")]
+        let provider = provider.with_notification::<tool::preview::BrowserPreviewClientMessage>(
+            State::browser_preview_message,
+        );
 
         // todo: .on_sync_mut::<notifs::Cancel>(handlers::handle_cancel)?
         let mut provider = provider
@@ -446,7 +451,7 @@ impl ServerState {
         Ok(())
     }
 
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub(crate) fn infer_pos(&self) -> LspResult<tinymist_preview::ControlPlaneMessage> {
         use tinymist_preview::{ControlPlaneMessage, ResolveSourceLocRequest};
 

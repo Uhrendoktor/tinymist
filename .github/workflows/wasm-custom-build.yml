@@ -1,0 +1,61 @@
+name: WASM custom browser package
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_path:
+        description: Repository-relative JSON asset manifest
+        required: true
+        default: wasm-assets.json
+        type: string
+      update_lock:
+        description: Download assets and generate/update the lockfile
+        required: true
+        default: false
+        type: boolean
+
+# Manual asset builds are independent from regular CI and replace older
+# manual builds on the same ref rather than running concurrently.
+concurrency:
+  group: tinymist-browser-${{ github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Fetch, embed, and package browser-only Tinymist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-shared-key: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+      - name: Install WebAssembly target and wasm-pack
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install wasm-pack --locked
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile
+      - name: Build browser-only VSIX with selected assets
+        run: yarn package:vscode:web
+        env:
+          TINYMIST_WASM_ASSET_MANIFEST: ${{ inputs.manifest_path }}
+          TINYMIST_WASM_ASSET_UPDATE_LOCK: ${{ inputs.update_lock }}
+      - name: Upload browser VSIX, asset lock, and notices
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinymist-web-custom-${{ github.run_number }}
+          path: |
+            dist/tinymist-web-*.vsix
+            target/wasm-assets/wasm-assets.lock.json
+            target/wasm-assets/THIRD-PARTY-NOTICES.txt
+          if-no-files-found: error
+          retention-days: 14

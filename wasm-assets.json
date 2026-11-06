@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "limits": {
+    "maxTotalBytes": 157286400,
+    "maxPackageBytes": 67108864,
+    "maxFontBytes": 33554432
+  },
+  "packages": [],
+  "fonts": []
+}

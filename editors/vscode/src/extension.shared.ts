@@ -45,7 +45,10 @@ function configureEditorAndLanguage(context: ExtensionContext, trait: TinymistTr
   config.customizedShowDocument = true;
   config.delegateFsRequests = false; // todo: detect live sharing.
   // Sets shared features
-  extensionState.features.preview = !isWeb && config.previewFeature === "enable";
+  // A browser build explicitly opts into preview after providing the Webview message transport.
+  // Native builds continue to respect the user's previewFeature setting.
+  extensionState.features.preview =
+    extensionState.features.preview || (!isWeb && config.previewFeature === "enable");
   extensionState.features.wordSeparator = config.configureDefaultWordSeparator !== "disable";
   extensionState.features.devKit = isDevMode || config.devKit === "enable";
   extensionState.features.dragAndDrop = !isWeb && config.dragAndDrop === "enable";

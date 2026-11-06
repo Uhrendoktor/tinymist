@@ -253,6 +253,9 @@ impl LspUniverseBuilder {
         .filter(|feature| features.is_enabled(*feature) || Some(*feature) == target_feature)
         .collect();
 
+        #[cfg(all(not(feature = "system"), feature = "web"))]
+        let access_model = DynAccessModel(Arc::new(EmbeddedPackageAccessModel(access_model)));
+
         LspUniverse::new_raw(
             entry,
             features,
@@ -303,6 +306,9 @@ impl LspUniverseBuilder {
                 .map(std::borrow::Cow::Borrowed)
                 .collect(),
         })?;
+        for font in wasm_assets::WASM_FONT_FILES {
+            searcher.add_font_data(Bytes::new(font.to_vec()));
+        }
         Ok(searcher.build())
     }
 
@@ -362,6 +368,24 @@ where
 {
     fn content(&self, src: &Path) -> FileResult<Bytes> {
         self.content(src)
+    }
+}
+
+#[cfg(all(not(feature = "system"), feature = "web"))]
+mod wasm_assets {
+    include!(concat!(env!("OUT_DIR"), "/wasm_font_assets.rs"));
+}
+
+#[cfg(all(not(feature = "system"), feature = "web"))]
+struct EmbeddedPackageAccessModel(DynAccessModel);
+
+#[cfg(all(not(feature = "system"), feature = "web"))]
+impl LspAccessModel for EmbeddedPackageAccessModel {
+    fn content(&self, src: &Path) -> FileResult<Bytes> {
+        if let Some(bytes) = tinymist_world::package::registry::embedded_package_file(src) {
+            return Ok(Bytes::new(bytes.to_vec()));
+        }
+        self.0.content(src)
     }
 }
 

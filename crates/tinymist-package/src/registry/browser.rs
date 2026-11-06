@@ -87,34 +87,42 @@ pub struct JsRegistry {
     pub real_resolve_fn: js_sys::Function,
 }
 
+const EMBEDDED_WASM_PACKAGE_PREFIX: &str = "/tinymist-wasm-assets/packages";
+
+mod wasm_assets {
+    include!(concat!(env!("OUT_DIR"), "/wasm_package_assets.rs"));
+}
+
+/// Returns the bytes of an embedded package file, if the path belongs to the
+/// build-time WASM package bundle.
+pub fn embedded_package_file(path: &Path) -> Option<&'static [u8]> {
+    if path == Path::new("/tinymist-wasm-assets/notices/THIRD-PARTY-NOTICES.txt") {
+        return Some(wasm_assets::THIRD_PARTY_NOTICES);
+    }
+    let path = path.to_string_lossy();
+    wasm_assets::PACKAGE_FILES
+        .iter()
+        .find(|(asset_path, _)| *asset_path == path.as_ref())
+        .map(|(_, bytes)| *bytes)
+}
+
 impl PackageRegistry for JsRegistry {
     fn resolve(&self, spec: &PackageSpec) -> Result<std::sync::Arc<Path>, PackageError> {
-        // prepare js_spec
-        let js_spec = js_sys::Object::new();
-        js_sys::Reflect::set(&js_spec, &"name".into(), &spec.name.to_string().into()).unwrap();
-        js_sys::Reflect::set(
-            &js_spec,
-            &"namespace".into(),
-            &spec.namespace.to_string().into(),
-        )
-        .unwrap();
-        js_sys::Reflect::set(
-            &js_spec,
-            &"version".into(),
-            &spec.version.to_string().into(),
-        )
-        .unwrap();
+        let namespace = spec.namespace.to_string();
+        let name = spec.name.to_string();
+        let version = spec.version.to_string();
+        let is_embedded = wasm_assets::PACKAGE_ROOTS.iter().any(|(ns, pkg, ver)| {
+            *ns == namespace.as_str() && *pkg == name.as_str() && *ver == version.as_str()
+        });
+        if is_embedded {
+            let root = format!("{EMBEDDED_WASM_PACKAGE_PREFIX}/{namespace}/{name}/{version}");
+            return Ok(Path::new(&root).into());
+        }
 
-        self.real_resolve_fn
-            .call1(&self.context.clone().into(), &js_spec)
-            .map_err(|e| PackageError::Other(Some(eco_format!("{:?}", e))))
-            .and_then(|v| {
-                if v.is_undefined() {
-                    Err(PackageError::NotFound(spec.clone()))
-                } else {
-                    Ok(Path::new(&v.as_string().unwrap()).into())
-                }
-            })
+        // Browser package resolution is deliberately fail-closed. The WASM
+        // worker never performs package HTTP requests or delegates to a host
+        // callback that could fetch remote bytes.
+        Err(PackageError::NotFound(spec.clone()))
     }
 
     // todo: provide package list for browser
