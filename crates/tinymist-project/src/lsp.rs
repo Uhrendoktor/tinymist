@@ -253,14 +253,14 @@ impl LspUniverseBuilder {
         .filter(|feature| features.is_enabled(*feature) || Some(*feature) == target_feature)
         .collect();
 
+        #[cfg(all(not(feature = "system"), feature = "web"))]
+        let access_model = DynAccessModel(Arc::new(EmbeddedPackageAccessModel(access_model)));
+
         LspUniverse::new_raw(
             entry,
             features,
             Some(inputs),
-            #[cfg(all(not(feature = "system"), feature = "web"))]
-        let access_model = DynAccessModel(Arc::new(EmbeddedPackageAccessModel(access_model)));
-
-        Vfs::new(resolver, access_model),
+            Vfs::new(resolver, access_model),
             package_registry,
             font_resolver,
             creation_timestamp,

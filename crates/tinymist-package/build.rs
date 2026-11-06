@@ -1,3 +1,5 @@
+//! Generates the compile-time index for package files embedded in browser WASM.
+
 use std::{
     env, fs,
     path::{Path, PathBuf},
