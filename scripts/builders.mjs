@@ -106,8 +106,18 @@ export async function buildPreview() {
 
   await Promise.all([run("tsc", "npx tsc"), run("vite", "npx vite build")]);
 
+  const builtHtmlPath = path.resolve(previewDir, "dist/index.html");
+  const builtHtml = await fs.readFile(builtHtmlPath, "utf8");
+  for (const marker of ["tinymist-preview-frame", "browserTransport"]) {
+    if (!builtHtml.includes(marker)) {
+      throw new Error(
+        `Bundled preview HTML is missing browser transport marker: ${marker}`,
+      );
+    }
+  }
+
   await fs.copyFile(
-    path.resolve(previewDir, "dist/index.html"),
+    builtHtmlPath,
     path.resolve(cwd, "crates/tinymist-assets/src/typst-preview.html"),
   );
 }
