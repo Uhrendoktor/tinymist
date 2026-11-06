@@ -431,6 +431,7 @@ export async function openPreviewInWebView({
     isNotPrimary: !!task.isNotPrimary,
     isBrowsing: !!task.isBrowsing,
     isDev: !!task.isDev,
+    browserTransport,
     uri: activeEditor.document.uri.toString(),
     taskId,
   };
@@ -642,7 +643,9 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
 
     console.log(`Preview Command ${filePath}`);
     const previewInSlideModeArgs = task.mode === "slide" ? ["--preview-mode=slide"] : [];
-    const dataPlaneHostArgs = !isDev ? ["--data-plane-host", "127.0.0.1:0"] : [];
+    // The browser preview uses the LSP/Webview data plane, never a localhost TCP listener.
+    const dataPlaneHostArgs =
+      !isDev && !browserTransport ? ["--data-plane-host", "127.0.0.1:0"] : [];
 
     const previewArgs = [
       "--task-id",
@@ -1073,6 +1076,7 @@ interface PersistPreviewState {
   isNotPrimary: boolean;
   isBrowsing: boolean;
   isDev: boolean;
+  browserTransport: boolean;
   uri: string;
 }
 
