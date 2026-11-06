@@ -111,8 +111,12 @@ impl PackageRegistry for JsRegistry {
             .and_then(|v| {
                 if v.is_undefined() {
                     Err(PackageError::NotFound(spec.clone()))
+                } else if let Some(path) = v.as_string() {
+                    Ok(Path::new(&path).into())
                 } else {
-                    Ok(Path::new(&v.as_string().unwrap()).into())
+                    Err(PackageError::Other(Some(eco_format!(
+                        "Browser package resolver returned a non-string value"
+                    ))))
                 }
             })
     }
