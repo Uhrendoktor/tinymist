@@ -941,9 +941,12 @@ mod browser_preview_tests {
             serde_json::from_value(wire).expect("frame should deserialize");
         assert_eq!(decoded.task_id, "preview-1");
 
-        match (expected, decoded.into_ws_message().expect("frame should decode")) {
+        let actual = decoded.into_ws_message().expect("frame should decode");
+        match (expected, actual) {
             (WsMessage::Text(expected), WsMessage::Text(actual)) => assert_eq!(actual, expected),
-            (WsMessage::Binary(expected), WsMessage::Binary(actual)) => assert_eq!(actual, expected),
+            (WsMessage::Binary(expected), WsMessage::Binary(actual)) => {
+                assert_eq!(actual, expected)
+            }
             (WsMessage::Ping(expected), WsMessage::Ping(actual)) => assert_eq!(actual, expected),
             (WsMessage::Pong(expected), WsMessage::Pong(actual)) => assert_eq!(actual, expected),
             _ => panic!("browser frame type changed during serialization"),
@@ -969,7 +972,6 @@ mod browser_preview_tests {
         assert!(frame.into_ws_message().is_err());
     }
 }
-
 
 #[cfg(all(test, feature = "preview-web"))]
 mod browser_preview_transport_tests {
