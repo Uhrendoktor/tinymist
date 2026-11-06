@@ -103,6 +103,24 @@ fn main() {
     }
     generated.push_str("];\n");
 
+    let notices = env::var_os("TINYMIST_WASM_ASSET_DIR")
+        .map(PathBuf::from)
+        .map(|dir| dir.join("THIRD-PARTY-NOTICES.txt"));
+    let notices = notices.filter(|path| path.is_file());
+    if let Some(path) = &notices {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+    generated.push_str("pub(crate) static THIRD_PARTY_NOTICES: &[u8] = ");
+    if let Some(path) = notices {
+        let absolute_path = path.canonicalize().expect("notices path must canonicalize");
+        generated.push_str(&format!(
+            "include_bytes!({:?});\n",
+            absolute_path.to_string_lossy()
+        ));
+    } else {
+        generated.push_str("&[];\n");
+    }
+
     fs::write(out_dir.join("wasm_package_assets.rs"), generated)
         .expect("cannot write generated WASM package index");
 }

@@ -96,6 +96,9 @@ mod wasm_assets {
 /// Returns the bytes of an embedded package file, if the path belongs to the
 /// build-time WASM package bundle.
 pub fn embedded_package_file(path: &Path) -> Option<&'static [u8]> {
+    if path == Path::new("/tinymist-wasm-assets/notices/THIRD-PARTY-NOTICES.txt") {
+        return Some(wasm_assets::THIRD_PARTY_NOTICES);
+    }
     let path = path.to_string_lossy();
     wasm_assets::PACKAGE_FILES
         .iter()

@@ -80,9 +80,9 @@ a locked build.
   is needed at runtime for these bundled fonts.
 - The browser's JS package resolver remains a fail-closed fallback. A package
   not in the build manifest returns NotFound; it is never downloaded at runtime.
-- The packager adds THIRD-PARTY-NOTICES.txt to the VSIX. The package and font
-  payload bytes themselves are compiled into tinymist_bg.wasm, not left as
-  executable sidecar assets.
+- The package/font payload bytes and their THIRD-PARTY-NOTICES.txt license text
+  are compiled into tinymist_bg.wasm. The notices are also included as a
+  human-readable VSIX file. No fetched asset is loaded as a runtime sidecar.
 
 Package imports are scanned in extracted .typ files. If a bundled package
 imports another versioned package not listed in the manifest, asset bundling

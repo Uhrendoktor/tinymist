@@ -104,6 +104,11 @@ await fs.cp(vscodeDir, stageDir, {
 
 const noticesSource = path.join(root, "target", "wasm-assets", "THIRD-PARTY-NOTICES.txt");
 const noticesTarget = path.join(stageDir, "out", "THIRD-PARTY-NOTICES.txt");
+const noticesBytes = await fs.readFile(noticesSource);
+assert.ok(
+  wasmBytes.includes(noticesBytes),
+  "WASM module does not contain the bundled third-party license notices",
+);
 await fs.copyFile(noticesSource, noticesTarget);
 assert.ok(
   (await fs.readFile(noticesTarget, "utf8")).includes("Third-party assets bundled"),
