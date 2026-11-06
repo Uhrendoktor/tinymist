@@ -5,6 +5,7 @@ on:
       - main
       - nightly
       - stable/**
+      - wasm/**
     tags:
       - "*"
   pull_request:
