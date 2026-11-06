@@ -4,7 +4,9 @@ use lsp_types::notification::Notification;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sync_ls::{internal_error, LspClient, LspResult};
-use tinymist_preview::{ControlPlaneMessage, Previewer, WsMessage};
+use tinymist_preview::{ControlPlaneMessage, Previewer};
+#[cfg(feature = "preview-web")]
+use tinymist_preview::WsMessage;
 #[cfg(feature = "preview")]
 use crate::tool::preview::HttpServer;
 use tinymist_std::error::IgnoreLogging;

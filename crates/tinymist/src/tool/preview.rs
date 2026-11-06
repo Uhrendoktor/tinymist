@@ -537,6 +537,7 @@ impl PreviewState {
         let browser_message_client = self.client.clone();
         #[cfg(feature = "preview-web")]
         let browser_message_handle = self.client.handle.clone();
+        #[cfg(feature = "preview-web")]
         let output_task_id = task_id.clone();
         just_future(async move {
             let mut previewer = previewer.await;
