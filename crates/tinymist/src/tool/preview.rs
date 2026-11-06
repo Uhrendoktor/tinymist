@@ -924,7 +924,6 @@ impl ServerState {
 #[cfg(all(test, feature = "preview-web"))]
 mod browser_preview_tests {
     use super::{BrowserPreviewDataMessage, BrowserPreviewMessageKind};
-    use bytes::Bytes;
     use tinymist_preview::WsMessage;
 
     fn assert_round_trip(frame: WsMessage) {
@@ -954,9 +953,9 @@ mod browser_preview_tests {
     #[test]
     fn browser_data_plane_round_trips_every_frame_kind() {
         assert_round_trip(WsMessage::Text("current".to_owned()));
-        assert_round_trip(WsMessage::Binary(Bytes::from_static(b"svg,\x00\x01")));
-        assert_round_trip(WsMessage::Ping(Bytes::from_static(b"ping")));
-        assert_round_trip(WsMessage::Pong(Bytes::from_static(b"pong")));
+        assert_round_trip(WsMessage::Binary("svg,\0\x01".as_bytes().to_vec().into()));
+        assert_round_trip(WsMessage::Ping(b"ping".to_vec().into()));
+        assert_round_trip(WsMessage::Pong(b"pong".to_vec().into()));
     }
 
     #[test]
