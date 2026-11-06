@@ -964,3 +964,32 @@ mod browser_preview_tests {
         assert!(frame.into_ws_message().is_err());
     }
 }
+
+
+#[cfg(all(test, feature = "preview-web"))]
+mod browser_preview_transport_tests {
+    use super::BrowserPreviewDataPlane;
+    use futures::{SinkExt, StreamExt};
+    use tinymist_preview::WsMessage;
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn browser_preview_data_plane_forwards_frames_in_both_directions() {
+        futures::executor::block_on(async {
+            let (incoming_tx, incoming_rx) = mpsc::unbounded_channel();
+            let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel();
+            let mut plane = BrowserPreviewDataPlane {
+                incoming: incoming_rx,
+                outgoing: outgoing_tx,
+            };
+
+            let client_frame = WsMessage::Text("client-frame".to_owned());
+            incoming_tx.send(client_frame.clone()).expect("input receiver is open");
+            assert!(matches!(plane.next().await, Some(Ok(WsMessage::Text(text))) if text == "client-frame"));
+
+            let server_frame = WsMessage::Text("server-frame".to_owned());
+            plane.send(server_frame.clone()).await.expect("output receiver is open");
+            assert!(matches!(outgoing_rx.recv().await, Some(WsMessage::Text(text)) if text == "server-frame"));
+        });
+    }
+}
