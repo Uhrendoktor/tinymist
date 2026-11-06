@@ -69,6 +69,14 @@ await fs.cp(vscodeDir, stageDir, {
   },
 });
 
+const noticesSource = path.join(root, "target", "wasm-assets", "THIRD-PARTY-NOTICES.txt");
+const noticesTarget = path.join(stageDir, "out", "THIRD-PARTY-NOTICES.txt");
+await fs.copyFile(noticesSource, noticesTarget);
+assert.ok(
+  (await fs.readFile(noticesTarget, "utf8")).includes("Third-party assets bundled"),
+  "VSIX must include third-party asset notices",
+);
+
 const stagedManifestPath = path.join(stageDir, "package.json");
 const stagedManifest = JSON.parse(await fs.readFile(stagedManifestPath, "utf8"));
 
@@ -148,6 +156,10 @@ for (const relativePath of requiredFiles) {
     `VSIX is missing ${relativePath}`,
   );
 }
+assert.ok(
+  archiveEntries.includes("extension/out/THIRD-PARTY-NOTICES.txt"),
+  "VSIX is missing third-party asset notices",
+);
 
 const nativePayloads = archiveEntries.filter((entry) =>
   /^extension\/out\/(tinymist(\.exe|\.pdb)?|extension\.js)$/.test(entry),

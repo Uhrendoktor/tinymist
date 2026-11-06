@@ -156,6 +156,16 @@ export async function buildTinymistVscodeWebBase() {
   await spawnAsync("vscode:web", "cd editors/vscode && node esbuild.web.mjs");
 }
 
+export async function bundleWasmAssets() {
+  const manifest = process.env.TINYMIST_WASM_ASSET_MANIFEST || "wasm-assets.json";
+  const updateLock = process.env.TINYMIST_WASM_ASSET_UPDATE_LOCK === "true";
+  const mode = updateLock ? "--update-lock" : "--locked";
+  await spawnAsync(
+    "wasm:assets",
+    `node scripts/bundle-wasm-assets.mjs --manifest "${manifest}" ${mode}`,
+  );
+}
+
 export async function buildTinymistVscodeWeb() {
   await Promise.all([checkVersion(), buildSyntax(), buildL10n(), buildEditorTools()]);
 
@@ -163,6 +173,7 @@ export async function buildTinymistVscodeWeb() {
   // first so the WASM package always contains the same bundled renderer that
   // the browser Webview bridge expects.
   await buildPreview();
+  await bundleWasmAssets();
   await buildWebLspBinary();
   await buildTinymistVscodeWebBase();
 }
@@ -242,6 +253,13 @@ export async function buildWebLspBinaryBase() {
   await spawnAsync(
     "lsp:web",
     "cd crates/tinymist && wasm-pack build --target web -- --no-default-features --features web,preview-web,export,no-content-hint",
+    {
+      cwd,
+      env: {
+        ...process.env,
+        TINYMIST_WASM_ASSET_DIR: path.resolve(cwd, "target/wasm-assets"),
+      },
+    },
   );
 }
 

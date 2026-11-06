@@ -87,8 +87,41 @@ pub struct JsRegistry {
     pub real_resolve_fn: js_sys::Function,
 }
 
+const EMBEDDED_WASM_PACKAGE_PREFIX: &str = "/tinymist-wasm-assets/packages";
+
+mod wasm_assets {
+    include!(concat!(env!("OUT_DIR"), "/wasm_package_assets.rs"));
+}
+
+/// Returns the bytes of an embedded package file, if the path belongs to the
+/// build-time WASM package bundle.
+pub fn embedded_package_file(path: &Path) -> Option<&'static [u8]> {
+    let path = path.to_string_lossy();
+    wasm_assets::PACKAGE_FILES
+        .iter()
+        .find(|(asset_path, _)| *asset_path == path.as_ref())
+        .map(|(_, bytes)| *bytes)
+}
+
 impl PackageRegistry for JsRegistry {
     fn resolve(&self, spec: &PackageSpec) -> Result<std::sync::Arc<Path>, PackageError> {
+        let namespace = spec.namespace.to_string();
+        let name = spec.name.to_string();
+        let version = spec.version.to_string();
+        let is_embedded = wasm_assets::PACKAGE_ROOTS.iter().any(|(ns, pkg, ver)| {
+            *ns == namespace && *pkg == name && *ver == version
+        });
+        if is_embedded {
+            let root = format!(
+                "{}/{}/{}/{}",
+                EMBEDDED_WASM_PACKAGE_PREFIX, namespace, name, version
+            );
+            return Ok(Path::new(&root).into());
+        }
+
+        // Only after the in-WASM bundle lookup do we consult the JS host.
+        // The shipped browser worker returns undefined here, so missing
+        // packages fail closed instead of triggering runtime network access.
         // prepare js_spec
         let js_spec = js_sys::Object::new();
         js_sys::Reflect::set(&js_spec, &"name".into(), &spec.name.to_string().into()).unwrap();
