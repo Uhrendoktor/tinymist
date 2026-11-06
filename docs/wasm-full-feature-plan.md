@@ -25,7 +25,7 @@ Finally, a no-native desktop install must select the browser extension host. VS 
 
 1. Build the existing Tinymist crate for `wasm32-unknown-unknown` with its `web` feature. Keep the LSP server, project model, diagnostics, completion, formatting, navigation, semantic tokens, and other in-process language features in the worker.
 2. Keep the native extension package unchanged. Produce a separate browser-only VSIX with a browser entry point and no native `main` entry.
-3. Split preview core from native transport dependencies. Compile the existing preview actors/data-plane for WASM and adapt its Sink/Stream to task-scoped VS Code Webview messages (or MessagePorts). Do not reimplement rendering in TypeScript or render every page eagerly.
+3. Split preview core from native transport dependencies. Compile the existing preview actors/data-plane for WASM and adapt its Sink/Stream to task-scoped LSP notifications and VS Code Webview messages. Do not reimplement rendering in TypeScript or render every page eagerly.
 4. Reuse the current preview frontend and its binary incremental-render protocol. The Webview adapter should preserve page navigation, outline, scroll synchronization, source-to-preview navigation, and partial rendering.
 5. Complete browser filesystem, font, package, and export adapters. Keep OS-dependent features gated behind the native/system feature.
 6. Add browser-target build and CI checks, package-manifest validation, and integration tests for multi-page lazy preview.
@@ -47,6 +47,12 @@ The intended result is feature parity for editor/LSP and the integrated preview,
 - multi-page integration test exercising page selection, lazy page rendering, incremental updates, outline, and scroll/source synchronization;
 - export, package resolution, workspace-font, and large-document performance tests.
 
-## Current implementation status
+## Current implementation status (2026-11-06)
 
-This branch is an implementation work-in-progress. The browser preview transport and host integration are being developed against the existing protocol. The remaining native preview server split, target-specific Tokio dependency cleanup, package/font/export adapters, browser-only packaging, and end-to-end validation must be completed before claiming full feature parity.
+The branch now has a browser-only VSIX packager, a dedicated browser Worker build, and an archive check that removes the Node `main` entry and native executable payloads. It also contains the preview feature split (`preview-core`, `preview`, `preview-web`), target-specific Tokio runtime features, and shared Typst preview renderer dependencies on WASM.
+
+The browser preview bridge is implemented in source: the Rust data plane serializes the existing `WsMessage` protocol to task-scoped LSP notifications; the VS Code extension forwards those frames to the preview Webview; and the frontend adapts its WebSocket API to the VS Code message channel. The web extension enables this preview path and its lifecycle cleanup. Browser export is also enabled: the WASM build includes the `export` feature, requests export bytes in memory, and writes them through `vscode.workspace.fs`.
+
+Frame conversion tests cover text, binary, ping, pong, and invalid base64. However, these changes still need an exact-head Actions build and a live VS Code Web Extension Host test proving multi-page display, incremental rendering after edits, outline/source/scroll synchronization, and disposal.
+
+Package support is not complete: the web Worker currently supplies a resolver callback that always returns `undefined`, and the browser registry has no package index or persistent local/cache storage. Font support is also limited to embedded fonts; the existing `BrowserFontSearcher::add_web_fonts` API is not yet connected to a browser or VS Code font provider. Native-only features such as tasks/process launch, shell commands, TCP servers, OS font enumeration, and external application launching remain unsupported in a browser-only distribution. The PR must remain draft until these adapters and runtime checks are addressed.
