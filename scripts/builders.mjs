@@ -147,13 +147,14 @@ export async function buildTinymistVscodeWebBase() {
 }
 
 export async function buildTinymistVscodeWeb() {
-  await Promise.all([
-    checkVersion(),
-    buildSyntax(),
-    buildL10n(),
-    buildEditorTools(),
-    buildWebLspBinary().then(buildTinymistVscodeWebBase),
-  ]);
+  await Promise.all([checkVersion(), buildSyntax(), buildL10n(), buildEditorTools()]);
+
+  // TYPST_PREVIEW_HTML is compiled into tinymist_bg.wasm. Build the frontend
+  // first so the WASM package always contains the same bundled renderer that
+  // the browser Webview bridge expects.
+  await buildPreview();
+  await buildWebLspBinary();
+  await buildTinymistVscodeWebBase();
 }
 
 export async function testTinymistVscodeBase() {
