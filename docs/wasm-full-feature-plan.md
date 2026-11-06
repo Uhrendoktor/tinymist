@@ -53,7 +53,9 @@ The branch now has a browser-only VSIX packager, a dedicated browser Worker buil
 
 The browser preview bridge is implemented in source: the Rust data plane serializes the existing `WsMessage` protocol to task-scoped LSP notifications; the VS Code extension forwards those frames to the preview Webview; and the frontend adapts its WebSocket API to the VS Code message channel. The web extension enables this preview path and its lifecycle cleanup. Browser export is also enabled: the WASM build includes the `export` feature, requests export bytes in memory, and writes them through `vscode.workspace.fs`.
 
-Frame conversion tests cover text, binary, ping, pong, and invalid base64. However, these changes still need an exact-head Actions build and a live VS Code Web Extension Host test proving multi-page display, incremental rendering after edits, outline/source/scroll synchronization, and disposal.
+Frame conversion tests cover text, binary, ping, pong, and invalid base64. A focused Vitest test also verifies that browser mode always selects the bundled previewer while native mode preserves configured previewers.
+
+The browser build now rebuilds `tools/typst-preview-frontend` before compiling the WASM asset, and checks for the bridge markers in both generated HTML and the resulting WASM module. The WebSocket shim is gated to browser Webviews, and browser preview startup no longer asks Rust to create a localhost listener. These checks are committed but remain unexecuted until an exact-head workflow run is available.
 
 **Bundled-only preview scope (2026-11-06):** the WASM extension must render with the preview HTML compiled into Tinymist's own WASM asset and Tinymist's embedded fonts. It must ignore configured custom preview providers, must not load external preview HTML or third-party previewer extensions, and must not use localhost HTTP/WebSocket services. The web Worker package resolver still returns `undefined`; therefore documents requiring remote `@preview` packages are not supported by this build. Workspace/user font provisioning is also not provided. These are explicit limits of this preview milestone, not pending adapter work.
 
