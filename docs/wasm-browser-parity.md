@@ -87,3 +87,16 @@ The missing capabilities are deliberate feature omissions and native transport a
 ## Implementation tracking
 
 This document records the intended architecture and acceptance boundary. Individual checkboxes should be updated only after the corresponding implementation and CI evidence exists.
+
+
+## Current branch milestone (2026-11-06)
+
+The first implementation increment now:
+
+- Adds a second esbuild entry for `src/web/server.ts`, producing `out/web-server.js` and bundling the wasm-bindgen module into the worker.
+- Adds a separately staged browser VSIX. Its manifest has `browser` but no `main`; it removes npm runtime dependencies and native executable/debug files. The packager verifies the VSIX archive contents before returning success.
+- Adds a CI job that builds the WASM extension, creates the browser VSIX, and uploads the artifact.
+- Adds Cargo feature boundaries for `preview-core` and `preview-web`. The WebAssembly build compiles the preview actor crate without the native Hyper/TCP dependencies.
+- Makes Tokio's `rt-multi-thread` feature conditional on non-WASM targets; the preview crate explicitly requests the browser-compatible `rt`, `sync`, and `time` features.
+
+**Not yet implemented:** the browser-specific preview LSP state and data plane are not wired to the VS Code Webview. The current preview command still belongs to the native `preview` feature and still assumes a localhost HTTP/WebSocket server. The web package therefore remains a browser-hosted LSP milestone, not full preview parity. Package registry population, local package storage, user/workspace font loading, and file export through `vscode.workspace.fs` also remain open. Do not mark the preview acceptance criteria complete until a webview can render multiple pages and receive incremental updates through the browser bridge.
