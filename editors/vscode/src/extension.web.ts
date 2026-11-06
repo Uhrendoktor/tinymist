@@ -6,6 +6,7 @@ import { createBrowserLanguageClient } from "./lsp.web";
 import { LanguageState } from "./lsp";
 import { previewActivate, previewDeactivate } from "./features/preview";
 import { IContext } from "./context";
+import { exportActivate } from "./features/export";
 
 function activateWebPreview(context: IContext) {
   previewActivate(context.context, false);
@@ -13,6 +14,7 @@ function activateWebPreview(context: IContext) {
 
 const webActivateTable = (): FeatureEntry[] => [
   [extensionState.features.preview, activateWebPreview, previewDeactivate],
+  [extensionState.features.export, exportActivate],
 ];
 
 LanguageState.Client = createBrowserLanguageClient;
@@ -22,7 +24,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     web: true,
     lsp: true,
     lspSystem: false,
-    export: false,
+    export: true,
     task: false,
     wordSeparator: true,
     label: false,

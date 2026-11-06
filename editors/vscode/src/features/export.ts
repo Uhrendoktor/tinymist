@@ -11,6 +11,7 @@ import type {
 import type { IContext } from "../context";
 import { l10nMsg } from "../l10n";
 import { type ExportResponse, tinymist } from "../lsp";
+import { extensionState } from "../state";
 
 /// These are names of the export functions in the LSP client, e.g. `exportPdf`, `exportHtml`.
 export type ExportKind =
@@ -277,7 +278,128 @@ export async function commandExport(
     return null;
   }
 
-  return await tinymist[`export${kind}`](uri, opts, actionOpts);
+  const response = await tinymist[`export${kind}`](
+    uri,
+    opts,
+    extensionState.features.web ? { ...actionOpts, write: false, open: false } : actionOpts,
+  );
+
+  if (!extensionState.features.web || !response || "message" in response) {
+    return response;
+  }
+
+  const persisted = await persistBrowserExport(response, kind, uri);
+  return persisted ? response : null;
+}
+
+const EXPORT_EXTENSIONS: Record<ExportKind, string> = {
+  Pdf: "pdf",
+  Html: "html",
+  Bundle: "zip",
+  Svg: "svg",
+  Png: "png",
+  Markdown: "md",
+  TeX: "tex",
+  Text: "txt",
+  Query: "json",
+};
+
+function decodeExportData(encoded: string): Uint8Array {
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function defaultExportPath(sourcePath: string, kind: ExportKind): string {
+  const slash = Math.max(sourcePath.lastIndexOf("/"), sourcePath.lastIndexOf(String.fromCharCode(92)));
+  const filename = sourcePath.slice(slash + 1);
+  const dot = filename.lastIndexOf(".");
+  const stem = dot > 0 ? filename.slice(0, dot) : filename;
+  const directory = slash >= 0 ? sourcePath.slice(0, slash + 1) : "";
+  return `${directory}${stem}.${EXPORT_EXTENSIONS[kind]}`;
+}
+
+function withPageSuffix(filePath: string, page: number): string {
+  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf(String.fromCharCode(92)));
+  const dot = filePath.lastIndexOf(".");
+  const insertAt = dot > slash ? dot : filePath.length;
+  return `${filePath.slice(0, insertAt)}-page-${page}${filePath.slice(insertAt)}`;
+}
+
+async function writeBrowserFile(filePath: string, encoded: string): Promise<void> {
+  const separator = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf(String.fromCharCode(92)));
+  const parent = filePath.slice(0, separator);
+  if (parent) {
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(parent));
+  }
+  await vscode.workspace.fs.writeFile(vscode.Uri.file(filePath), decodeExportData(encoded));
+}
+
+async function persistBrowserExport(
+  response: ExportResponse,
+  kind: ExportKind,
+  sourcePath: string,
+): Promise<boolean> {
+  const defaultPath = defaultExportPath(sourcePath, kind);
+  const choosePath = async (suggestedPath: string): Promise<string | undefined> => {
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(suggestedPath),
+      saveLabel: l10nMsg("Save export"),
+      filters: { [EXPORT_EXTENSIONS[kind].toUpperCase()]: [EXPORT_EXTENSIONS[kind]] },
+    });
+    return uri?.fsPath;
+  };
+
+  if ("items" in response) {
+    const items = response.items;
+    if (items.length === 0) {
+      return false;
+    }
+
+    const existingPaths = items.map((item) => item.path);
+    const allPathsAreDistinct =
+      existingPaths.every((itemPath): itemPath is string => !!itemPath) &&
+      new Set(existingPaths).size === existingPaths.length;
+
+    if (allPathsAreDistinct) {
+      for (const item of items) {
+        if (item.data && item.path) {
+          await writeBrowserFile(item.path, item.data);
+        }
+      }
+      return true;
+    }
+
+    const firstPath = await choosePath(items[0].path || defaultPath);
+    if (!firstPath) {
+      return false;
+    }
+
+    for (const item of items) {
+      if (!item.data) {
+        continue;
+      }
+      const targetPath = withPageSuffix(firstPath, item.page + 1);
+      await writeBrowserFile(targetPath, item.data);
+      item.path = targetPath;
+    }
+    return true;
+  }
+
+  if (!response.data) {
+    return false;
+  }
+
+  const targetPath = response.path || (await choosePath(defaultPath));
+  if (!targetPath) {
+    return false;
+  }
+  await writeBrowserFile(targetPath, response.data);
+  response.path = targetPath;
+  return true;
 }
 
 /**
@@ -293,7 +415,9 @@ export async function commandShow(kind: ExportKind, extraOpts?: ExportOpts): Pro
   const actionOpts: ExportActionOpts = {};
 
   const conf = vscode.workspace.getConfiguration("tinymist");
-  const openIn: string = conf.get("showExportFileIn") || "editorTab";
+  const openIn: string = extensionState.features.web
+    ? "editorTab"
+    : conf.get("showExportFileIn") || "editorTab";
 
   // Telling the language server to open the file instead of using
   // ```
@@ -303,7 +427,7 @@ export async function commandShow(kind: ExportKind, extraOpts?: ExportOpts): Pro
   //
   // See https://github.com/Myriad-Dreamin/tinymist/issues/837
   // Also see https://github.com/microsoft/vscode/issues/85930
-  const openBySystemDefault = openIn === "systemDefault";
+  const openBySystemDefault = !extensionState.features.web && openIn === "systemDefault";
   if (openBySystemDefault && kind !== "Bundle") {
     actionOpts.open = true;
   }
