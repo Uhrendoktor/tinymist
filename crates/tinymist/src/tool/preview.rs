@@ -131,6 +131,7 @@ pub struct PreviewArgs {
 }
 
 /// Resolves the browser page title for preview HTML.
+#[cfg(feature = "preview")]
 pub fn resolve_page_title(page_title: Option<&str>, input: Option<&str>) -> String {
     if let Some(title) = page_title {
         return title.to_owned();
