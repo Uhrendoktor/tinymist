@@ -653,7 +653,7 @@ impl Config {
     }
 
     /// Gets the preview configuration.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub fn preview(&self) -> PreviewConfig {
         PreviewConfig {
             format: ExportTarget::Paged,

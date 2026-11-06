@@ -115,10 +115,8 @@ impl PackageRegistry for JsRegistry {
             *ns == namespace.as_str() && *pkg == name.as_str() && *ver == version.as_str()
         });
         if is_embedded {
-            let root = format!(
-                "{}/{}/{}/{}",
-                EMBEDDED_WASM_PACKAGE_PREFIX, namespace, name, version
-            );
+            let root =
+                format!("{EMBEDDED_WASM_PACKAGE_PREFIX}/{namespace}/{name}/{version}");
             return Ok(Path::new(&root).into());
         }
 

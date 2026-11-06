@@ -19,7 +19,7 @@ pub struct ProjectOpts {
     /// The shared config.
     pub config: Config,
     /// The shared preview state.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub preview: ProjectPreviewState,
     /// The export target.
     pub export_target: ExportTarget,
@@ -78,7 +78,7 @@ where
 
     // Create the actor
     let compile_handle = Arc::new(CompileHandlerImpl {
-        #[cfg(feature = "preview")]
+        #[cfg(any(feature = "preview", feature = "preview-web"))]
         preview: opts.preview,
         is_standalone: true,
         #[cfg(feature = "export")]

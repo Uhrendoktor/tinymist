@@ -27,7 +27,7 @@ use sync_ls::just_ok;
 use tinymist_assets::TYPST_PREVIEW_HTML;
 use tinymist_preview::{
     ControlPlaneMessage, ControlPlaneRx, ControlPlaneTx, DocToSrcJumpInfo,
-    PreviewBuilder, PreviewConfig, PreviewMode, Previewer, ViewerWindowState, WsMessage,
+    PreviewBuilder, PreviewConfig, PreviewMode, ViewerWindowState, WsMessage,
 };
 #[cfg(feature = "preview")]
 use tinymist_preview::frontend_html;
@@ -717,7 +717,7 @@ fn send_show_document(client: &TypedLspClient<PreviewState>, s: &DocToSrcJumpInf
     };
 
     // todo: resolve uri if any
-    let uri = match Url::from_file_path(Path::new(&s.filepath)) {
+    let uri = match Url::parse(&format!("file://{}", s.filepath)) {
         Ok(uri) => uri,
         Err(e) => {
             log::error!(
