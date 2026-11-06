@@ -983,12 +983,15 @@ mod browser_preview_transport_tests {
                 outgoing: outgoing_tx,
             };
 
-            let client_frame = WsMessage::Text("client-frame".to_owned());
-            incoming_tx.send(client_frame.clone()).expect("input receiver is open");
+            incoming_tx
+                .send(WsMessage::Text("client-frame".to_owned()))
+                .expect("input receiver is open");
             assert!(matches!(plane.next().await, Some(Ok(WsMessage::Text(text))) if text == "client-frame"));
 
-            let server_frame = WsMessage::Text("server-frame".to_owned());
-            plane.send(server_frame.clone()).await.expect("output receiver is open");
+            plane
+                .send(WsMessage::Text("server-frame".to_owned()))
+                .await
+                .expect("output receiver is open");
             assert!(matches!(outgoing_rx.recv().await, Some(WsMessage::Text(text)) if text == "server-frame"));
         });
     }
