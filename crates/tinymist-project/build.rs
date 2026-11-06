@@ -4,6 +4,7 @@ use std::{
 };
 
 fn visit_fonts(current: &Path, files: &mut Vec<PathBuf>) {
+    println!("cargo:rerun-if-changed={}", current.display());
     let mut entries = fs::read_dir(current)
         .unwrap_or_else(|err| panic!("cannot read {}: {err}", current.display()))
         .map(|entry| entry.expect("cannot read font entry").path())
@@ -11,6 +12,7 @@ fn visit_fonts(current: &Path, files: &mut Vec<PathBuf>) {
     entries.sort();
 
     for path in entries {
+        println!("cargo:rerun-if-changed={}", path.display());
         let metadata = fs::symlink_metadata(&path)
             .unwrap_or_else(|err| panic!("cannot stat {}: {err}", path.display()));
         assert!(

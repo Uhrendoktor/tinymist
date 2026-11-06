@@ -119,39 +119,10 @@ impl PackageRegistry for JsRegistry {
             return Ok(Path::new(&root).into());
         }
 
-        // Only after the in-WASM bundle lookup do we consult the JS host.
-        // The shipped browser worker returns undefined here, so missing
-        // packages fail closed instead of triggering runtime network access.
-        // prepare js_spec
-        let js_spec = js_sys::Object::new();
-        js_sys::Reflect::set(&js_spec, &"name".into(), &spec.name.to_string().into()).unwrap();
-        js_sys::Reflect::set(
-            &js_spec,
-            &"namespace".into(),
-            &spec.namespace.to_string().into(),
-        )
-        .unwrap();
-        js_sys::Reflect::set(
-            &js_spec,
-            &"version".into(),
-            &spec.version.to_string().into(),
-        )
-        .unwrap();
-
-        self.real_resolve_fn
-            .call1(&self.context.clone().into(), &js_spec)
-            .map_err(|e| PackageError::Other(Some(eco_format!("{:?}", e))))
-            .and_then(|v| {
-                if v.is_undefined() {
-                    Err(PackageError::NotFound(spec.clone()))
-                } else if let Some(path) = v.as_string() {
-                    Ok(Path::new(&path).into())
-                } else {
-                    Err(PackageError::Other(Some(eco_format!(
-                        "Browser package resolver returned a non-string value"
-                    ))))
-                }
-            })
+        // Browser package resolution is deliberately fail-closed. The WASM
+        // worker never performs package HTTP requests or delegates to a host
+        // callback that could fetch remote bytes.
+        Err(PackageError::NotFound(spec.clone()))
     }
 
     // todo: provide package list for browser
