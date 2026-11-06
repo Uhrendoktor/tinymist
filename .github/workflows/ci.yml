@@ -16,6 +16,12 @@ on:
       - stable/**
   workflow_dispatch:
 
+# Keep at most one CI run active for a given PR or branch. A new push cancels
+# every older run for the same work instead of compiling stale commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   RUSTFLAGS: '-Dwarnings'
   CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc

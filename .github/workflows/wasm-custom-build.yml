@@ -1,9 +1,6 @@
 name: WASM custom browser package
 
 on:
-  push:
-    branches:
-      - wasm/**
   workflow_dispatch:
     inputs:
       manifest_path:
@@ -16,6 +13,12 @@ on:
         required: true
         default: false
         type: boolean
+
+# Manual asset builds are independent from regular CI and replace older
+# manual builds on the same ref rather than running concurrently.
+concurrency:
+  group: wasm-custom-build-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
