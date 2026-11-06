@@ -1,4 +1,7 @@
-use std::{env, fs, path::{Path, PathBuf}};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 fn visit_fonts(current: &Path, files: &mut Vec<PathBuf>) {
     let mut entries = fs::read_dir(current)
@@ -18,9 +21,12 @@ fn visit_fonts(current: &Path, files: &mut Vec<PathBuf>) {
         if metadata.is_dir() {
             visit_fonts(&path, files);
         } else if metadata.is_file() {
-            let supported = path.extension()
+            let supported = path
+                .extension()
                 .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "ttf" | "otf" | "ttc"));
+                .is_some_and(|ext| {
+                    matches!(ext.to_ascii_lowercase().as_str(), "ttf" | "otf" | "ttc")
+                });
             if supported {
                 files.push(path);
             }

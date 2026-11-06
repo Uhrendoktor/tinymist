@@ -62,7 +62,10 @@ The WASM: custom browser package workflow accepts a manifest path and an
 update_lock switch. Run it with update_lock=true to produce a new lock,
 then commit the generated lock before making a reproducible build. Run it with
 update_lock=false for a strict locked build. The workflow uploads the VSIX,
-the generated lock snapshot, and third-party notices.
+the generated lock snapshot, and third-party notices. For a non-default manifest,
+copy the uploaded snapshot to the matching adjacent lock path (for example,
+custom-assets.lock.json next to custom-assets.json) and commit it before running
+a locked build.
 
 ## Runtime boundary
 

@@ -66,13 +66,14 @@ function packageUrl(item) {
   return item.url || "https://packages.typst.org/" + item.namespace + "/" + item.name + "-" + item.version + ".tar.gz";
 }
 
-function lockRecord(id, item, url, digest) {
+function lockRecord(id, item, url, digest, licenseDigest) {
   return {
     id,
     url,
     sha256: digest,
     license: item.license,
-    licenseUrl: item.licenseUrl
+    licenseUrl: item.licenseUrl,
+    licenseSha256: licenseDigest
   };
 }
 
@@ -101,13 +102,16 @@ function validateManifest(manifest) {
   }
 
   const fontIds = new Set();
+  const fontFiles = new Set();
   for (const item of manifest.fonts) {
     assert.ok(item.name && item.url && item.license && item.licenseUrl, "each font must declare name, url, license, and licenseUrl");
     safeSegment(item.file, "font file");
     assert.match(item.file, /\.(ttf|otf|ttc)$/i, "only TTF, OTF, and TTC font files are supported");
     const id = item.name;
     assert.ok(!fontIds.has(id), "duplicate font: " + id);
+    assert.ok(!fontFiles.has(item.file), "duplicate font filename: " + item.file);
     fontIds.add(id);
+    fontFiles.add(item.file);
   }
   return { limits, packageIds, fontIds };
 }
@@ -169,12 +173,14 @@ async function main() {
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
   const { limits, packageIds, fontIds } = validateManifest(manifest);
   const relativeManifest = path.relative(root, manifestPath).replace(/\\/g, "/");
+  assert.match(manifestPath, /\.json$/i, "asset manifest must be a JSON file");
   const lockPath = manifestPath.replace(/\.json$/i, ".lock.json");
   let previousLock = { schemaVersion: 1, packages: [], fonts: [] };
 
   if (args.mode === "locked") {
     previousLock = JSON.parse(await fs.readFile(lockPath, "utf8"));
     assert.equal(previousLock.schemaVersion, 1, "unsupported asset lock schema");
+    assert.equal(previousLock.manifest, relativeManifest, "asset lock belongs to a different manifest");
     assert.ok(Array.isArray(previousLock.packages) && Array.isArray(previousLock.fonts), "invalid asset lock");
     assert.deepEqual(
       previousLock.packages.map((item) => item.id).sort(),
@@ -229,8 +235,12 @@ async function main() {
     await fs.rm(safeArchive, { force: true });
 
     const notice = await fetchBytes(item.licenseUrl, 256 * 1024, "license notice for " + id);
+    const licenseDigest = sha256(notice);
+    if (args.mode === "locked") {
+      assert.equal(licenseDigest, previous.licenseSha256, "license notice SHA-256 mismatch for package " + id);
+    }
     await fs.writeFile(path.join(noticesDir, id.replace(/[/:]/g, "-") + ".txt"), notice);
-    packageLock.push(lockRecord(id, item, url, digest));
+    packageLock.push(lockRecord(id, item, url, digest, licenseDigest));
     noticeLines.push(id + " — " + item.license + " — " + url);
     noticeLines.push(notice.toString("utf8"));
     noticeLines.push("");
@@ -257,8 +267,12 @@ async function main() {
 
     await fs.writeFile(path.join(fontDir, item.file), bytes);
     const notice = await fetchBytes(item.licenseUrl, 256 * 1024, "license notice for font " + id);
+    const licenseDigest = sha256(notice);
+    if (args.mode === "locked") {
+      assert.equal(licenseDigest, previous.licenseSha256, "license notice SHA-256 mismatch for font " + id);
+    }
     await fs.writeFile(path.join(noticesDir, id.replace(/[^A-Za-z0-9._+-]/g, "-") + ".txt"), notice);
-    fontLock.push({ ...lockRecord(id, item, item.url, digest), file: item.file });
+    fontLock.push({ ...lockRecord(id, item, item.url, digest, licenseDigest), file: item.file });
     noticeLines.push(id + " — " + item.license + " — " + item.url);
     noticeLines.push(notice.toString("utf8"));
     noticeLines.push("");
@@ -298,12 +312,21 @@ async function main() {
   }
   await fs.writeFile(path.join(outputDir, "wasm-assets.lock.json"), JSON.stringify(lock, null, 2) + "\n");
 
-  const packageFiles = await listFiles(packageDir);
-  const fontFiles = await listFiles(fontDir);
+  const embeddedFiles = [...await listFiles(packageDir), ...await listFiles(fontDir)];
+  let embeddedBytes = 0;
+  for (const file of embeddedFiles) {
+    embeddedBytes += (await fs.stat(file)).size;
+  }
+  if (embeddedBytes > limits.maxTotalBytes) {
+    throw new Error("Expanded WASM asset bytes exceed maxTotalBytes");
+  }
+  const packageFileCount = (await listFiles(packageDir)).length;
+  const fontFileCount = (await listFiles(fontDir)).length;
   console.log(
     "Bundled " + packageIds.size + " package(s), " + fontIds.size + " font(s), " +
-    packageFiles.length + " package file(s), " + fontFiles.length + " font file(s), " +
-    totalBytes + " downloaded bytes. Runtime asset loading is WASM-only."
+    packageFileCount + " package file(s), " + fontFileCount + " font file(s), " +
+    totalBytes + " downloaded bytes and " + embeddedBytes + " embedded bytes. " +
+    "Runtime asset loading is WASM-only."
   );
 }
 

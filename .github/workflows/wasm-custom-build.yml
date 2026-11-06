@@ -1,6 +1,9 @@
 name: WASM custom browser package
 
 on:
+  push:
+    branches:
+      - wasm/**
   workflow_dispatch:
     inputs:
       manifest_path:

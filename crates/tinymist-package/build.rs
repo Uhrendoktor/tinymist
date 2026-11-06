@@ -1,4 +1,7 @@
-use std::{env, fs, path::{Path, PathBuf}};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 const VIRTUAL_PREFIX: &str = "/tinymist-wasm-assets/packages";
 
@@ -65,7 +68,11 @@ fn main() {
 
                     for version_dir in versions {
                         assert!(version_dir.is_dir(), "package version must be a directory");
-                        let version = version_dir.file_name().unwrap().to_string_lossy().to_string();
+                        let version = version_dir
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .to_string();
                         roots.push((namespace.clone(), name.clone(), version));
                         visit_files(&packages_dir, &version_dir, &mut files);
                     }
@@ -78,7 +85,7 @@ fn main() {
     files.sort_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
 
     let mut generated = String::from(
-        "pub(crate) static PACKAGE_ROOTS: &[(&str, &str, &str)] = &[\n"
+        "pub(crate) static PACKAGE_ROOTS: &[(&str, &str, &str)] = &[\n",
     );
     for (namespace, name, version) in roots {
         generated.push_str(&format!("    ({namespace:?}, {name:?}, {version:?}),\n"));
