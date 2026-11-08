@@ -124,6 +124,13 @@
     },
     {
       "namespace": "preview",
+      "name": "oxifmt",
+      "version": "1.0.0",
+      "license": "MIT OR Apache-2.0",
+      "licenseUrl": "https://raw.githubusercontent.com/PgBiel/typst-oxifmt/main/LICENSE-MIT"
+    },
+    {
+      "namespace": "preview",
       "name": "physica",
       "version": "0.9.8",
       "license": "MIT",
