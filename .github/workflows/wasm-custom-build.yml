@@ -29,12 +29,37 @@ jobs:
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 120
     steps:
-      - name: Install host compiler prerequisites if missing
+      - name: Verify or provision host C compiler
         run: |
-          if ! command -v cc >/dev/null 2>&1; then
+          set -euo pipefail
+          if command -v cc >/dev/null 2>&1; then
+            cc --version
+            exit 0
+          fi
+
+          compiler=""
+          if command -v gcc >/dev/null 2>&1; then
+            compiler="$(command -v gcc)"
+          elif command -v clang >/dev/null 2>&1; then
+            compiler="$(command -v clang)"
+          fi
+
+          if [ -n "$compiler" ]; then
+            mkdir -p "$RUNNER_TEMP/cc-bin"
+            ln -sf "$compiler" "$RUNNER_TEMP/cc-bin/cc"
+            echo "$RUNNER_TEMP/cc-bin" >> "$GITHUB_PATH"
+            export PATH="$RUNNER_TEMP/cc-bin:$PATH"
+          elif command -v apt-get >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+            apt-get update
+            apt-get install -y --no-install-recommends build-essential
+          elif command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends build-essential
+          else
+            echo "::error::This self-hosted runner has no cc, gcc, or clang and no root/sudo access to install build-essential. Install a host C compiler on the runner."
+            exit 1
           fi
+
           cc --version
       - uses: actions/checkout@v4
         with:
