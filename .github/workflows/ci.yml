@@ -97,6 +97,13 @@ jobs:
     name: Check Clippy, Formatting, Completion, Documentation, and Tests (Linux)
     runs-on: ubuntu-latest
     steps:
+      - name: Install host compiler prerequisites if missing
+        run: |
+          if ! command -v cc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends build-essential
+          fi
+          cc --version
       - uses: actions/checkout@v4
       - name: Checkout Typst renderer suite
         uses: actions/checkout@v4
