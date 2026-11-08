@@ -181,6 +181,13 @@
     {
       "namespace": "preview",
       "name": "zero",
+      "version": "0.6.1",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/typst/packages/main/packages/preview/zero/0.6.1/LICENSE"
+    },
+    {
+      "namespace": "preview",
+      "name": "zero",
       "version": "0.7.1",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/Mc-Zen/zero/main/LICENSE"
