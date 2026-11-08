@@ -421,14 +421,6 @@ jobs:
         run: node scripts/bundle-wasm-assets.mjs --manifest wasm-assets-smoke.json --update-lock
       - name: Build and package browser-only Tinymist
         run: yarn package:vscode:web
-        env:
-          TINYMIST_WASM_ASSET_UPDATE_LOCK: "true"
-      - name: Preserve generated WASM asset lock for review
-        if: success()
-        run: |
-          echo "::group::Generated wasm-assets.lock.json"
-          cat wasm-assets.lock.json
-          echo "::endgroup::"
       - name: Upload browser-only VSIX and generated asset lock
         id: upload_vsix
         uses: actions/upload-artifact@v4
