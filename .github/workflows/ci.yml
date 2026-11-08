@@ -423,8 +423,16 @@ jobs:
         run: yarn package:vscode:web
         env:
           TINYMIST_WASM_ASSET_UPDATE_LOCK: "true"
+      - name: Preserve generated WASM asset lock for review
+        if: success()
+        run: |
+          echo "::group::Generated wasm-assets.lock.json"
+          cat wasm-assets.lock.json
+          echo "::endgroup::"
       - name: Upload browser-only VSIX and generated asset lock
+        id: upload_vsix
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: tinymist-web-vsix
           path: |
@@ -432,4 +440,8 @@ jobs:
             wasm-assets.lock.json
             target/wasm-assets/THIRD-PARTY-NOTICES.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
+      - name: Report artifact storage quota issue
+        if: steps.upload_vsix.outcome == 'failure'
+        run: |
+          echo "::warning::The browser-only VSIX passed build and archive validation, but GitHub Actions rejected artifact storage. The generated asset lock is printed in the previous step. Free Actions artifact storage to enable downloads."
