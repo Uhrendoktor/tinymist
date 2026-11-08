@@ -47,6 +47,7 @@ jobs:
       - name: Install pinned Yarn without global runner changes
         run: |
           npm install --prefix "$RUNNER_TEMP/yarn" yarn@1.22.22
+          export PATH="$RUNNER_TEMP/yarn/node_modules/.bin:$PATH"
           echo "$RUNNER_TEMP/yarn/node_modules/.bin" >> "$GITHUB_PATH"
           node --version
           npm --version
