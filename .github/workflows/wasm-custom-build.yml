@@ -52,10 +52,24 @@ jobs:
           node --version
           npm --version
           yarn --version
-      - name: Install wasm-pack if needed
+      - name: Install pinned wasm-pack binary if needed
         run: |
+          set -euo pipefail
           if ! command -v wasm-pack >/dev/null 2>&1; then
-            cargo install wasm-pack --locked
+            archive="$RUNNER_TEMP/wasm-pack-v0.15.1-x86_64-unknown-linux-musl.tar.gz"
+            install_dir="$RUNNER_TEMP/wasm-pack"
+            binary_dir="$RUNNER_TEMP/wasm-pack-bin"
+            mkdir -p "$install_dir" "$binary_dir"
+            curl --fail --location --silent --show-error \
+              "https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.1/wasm-pack-v0.15.1-x86_64-unknown-linux-musl.tar.gz" \
+              --output "$archive"
+            echo "410101009739b9d01c7d5affaaad6e9c9a24b4cba6791a4805db8e89b9bf7af2  $archive" | sha256sum --check --status
+            tar -xzf "$archive" -C "$install_dir"
+            binary="$(find "$install_dir" -type f -name wasm-pack -print -quit)"
+            test -n "$binary"
+            install -m 0755 "$binary" "$binary_dir/wasm-pack"
+            echo "$binary_dir" >> "$GITHUB_PATH"
+            export PATH="$binary_dir:$PATH"
           fi
           wasm-pack --version
       - name: Install JavaScript dependencies
