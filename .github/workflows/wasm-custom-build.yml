@@ -37,7 +37,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: yarn
+      - name: Install pinned Yarn without global runner changes
+        run: |
+          npm install --prefix "$RUNNER_TEMP/yarn" yarn@1.22.22
+          echo "$RUNNER_TEMP/yarn/node_modules/.bin" >> "$GITHUB_PATH"
+          node --version
+          npm --version
+          yarn --version
       - name: Install WebAssembly target and wasm-pack
         run: |
           rustup target add wasm32-unknown-unknown

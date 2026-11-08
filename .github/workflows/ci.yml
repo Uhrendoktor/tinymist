@@ -108,11 +108,16 @@ jobs:
           components: clippy, rustfmt
           cache-shared-key: x86_64-unknown-linux-gnu
           cache-save-if: false
-      - name: Install Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'yarn'
+      - name: Install pinned Yarn without global runner changes
+        run: |
+          npm install --prefix "$RUNNER_TEMP/yarn" yarn@1.22.22
+          echo "$RUNNER_TEMP/yarn/node_modules/.bin" >> "$GITHUB_PATH"
+          node --version
+          npm --version
+          yarn --version
       - name: Install system deps
         run: |
           sudo apt-get update
