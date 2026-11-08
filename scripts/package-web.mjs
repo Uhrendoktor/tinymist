@@ -70,12 +70,15 @@ for (const assetPath of packageFiles) {
   );
 }
 
+const fontAssetsRoot = path.join(root, "target", "wasm-assets", "fonts");
 for (const assetPath of fontFiles) {
+  const relativePath = path.relative(fontAssetsRoot, assetPath).split(path.sep).join("/");
+  const embeddedPath = Buffer.from(`/tinymist-wasm-assets/fonts/${relativePath}`);
   const assetBytes = await fs.readFile(assetPath);
-  assert.ok(assetBytes.length > 0, `Bundled font file is empty: ${path.relative(root, assetPath)}`);
+  assert.ok(assetBytes.length > 0, `Bundled font file is empty: ${relativePath}`);
   assert.ok(
-    wasmBytes.includes(assetBytes),
-    `WASM module does not contain bundled font bytes from ${path.relative(root, assetPath)}`,
+    wasmBytes.includes(embeddedPath),
+    `WASM module is missing the embedded font file index entry: ${relativePath}`,
   );
 }
 if (assetLock.packages.length > 0) {

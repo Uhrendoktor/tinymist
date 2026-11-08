@@ -306,7 +306,9 @@ impl LspUniverseBuilder {
                 .map(std::borrow::Cow::Borrowed)
                 .collect(),
         })?;
-        for font in wasm_assets::WASM_FONT_FILES {
+        for (font_path, font) in wasm_assets::WASM_FONT_FILES {
+            // Retain the source-relative index key alongside the statically embedded bytes.
+            log::debug!("Loading embedded browser font asset: {font_path}");
             searcher.add_font_data(Bytes::new(font.to_vec()));
         }
         Ok(searcher.build())
