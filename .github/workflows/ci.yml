@@ -1,4 +1,6 @@
 name: tinymist::ci
+
+# WASM PRs use one local-runner job to build and verify the offline browser VSIX.
 on:
   push:
     branches:
