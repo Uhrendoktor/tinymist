@@ -332,11 +332,14 @@ jobs:
     if: ${{ startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Build and verify browser-only WASM VSIX
     runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          cache-shared-key: wasm32-unknown-unknown
+      - name: Verify repository-pinned Rust toolchain
+        run: |
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -351,7 +354,10 @@ jobs:
       - name: Install WebAssembly target and wasm-pack
         run: |
           rustup target add wasm32-unknown-unknown
-          cargo install wasm-pack --locked
+          if ! command -v wasm-pack >/dev/null 2>&1; then
+            cargo install wasm-pack --locked
+          fi
+          wasm-pack --version
       - name: Install JavaScript dependencies
         run: yarn install --frozen-lockfile
       - name: Dry-run smallest package and IBM Plex font
