@@ -49,30 +49,33 @@ async function listBundledFiles(directory) {
   await visit(directory);
   return files;
 }
-const packageFiles = await listBundledFiles(path.join(root, "target", "wasm-assets", "packages"));
+const packageAssetsRoot = path.join(root, "target", "wasm-assets", "packages");
+const packageFiles = await listBundledFiles(packageAssetsRoot);
 const fontFiles = await listBundledFiles(path.join(root, "target", "wasm-assets", "fonts"));
-const wasmAssetRoot = path.join(root, "target", "wasm-assets");
-for (const assetPath of [...packageFiles, ...fontFiles]) {
+
+// wasm-opt may split, merge, or rewrite data segments, so a package file's
+// original bytes are not guaranteed to remain contiguous in the optimized
+// module. The Rust build script emits every file as an include_bytes! entry
+// keyed by its virtual path; the browser VFS resolves through that static
+// lookup table. Verify every key survives optimization, and separately check
+// raw bytes for font data where the embedded font resolver has no path index.
+for (const assetPath of packageFiles) {
+  const relativePath = path.relative(packageAssetsRoot, assetPath).split(path.sep).join("/");
+  const embeddedPath = Buffer.from(`/tinymist-wasm-assets/packages/${relativePath}`);
   const assetBytes = await fs.readFile(assetPath);
-  assert.ok(assetBytes.length > 0, `Bundled asset is empty: ${path.relative(root, assetPath)}`);
+  assert.ok(assetBytes.length > 0, `Bundled package file is empty: ${relativePath}`);
+  assert.ok(
+    wasmBytes.includes(embeddedPath),
+    `WASM module is missing the embedded package file index entry: ${relativePath}`,
+  );
+}
 
-  if (assetPath.endsWith(".wasm")) {
-    // wasm-opt may rewrite nested WASM payload data segments, so their original
-    // bytes need not survive as one contiguous sequence in the outer module.
-    // The embedded package lookup table is keyed by this virtual path and
-    // EmbeddedPackageAccessModel reads the corresponding static byte slice.
-    const relativePath = path.relative(wasmAssetRoot, assetPath).split(path.sep).join("/");
-    const embeddedPath = Buffer.from(`/tinymist-wasm-assets/${relativePath}`);
-    assert.ok(
-      wasmBytes.includes(embeddedPath),
-      `WASM module is missing the embedded package file entry: ${relativePath}`,
-    );
-    continue;
-  }
-
+for (const assetPath of fontFiles) {
+  const assetBytes = await fs.readFile(assetPath);
+  assert.ok(assetBytes.length > 0, `Bundled font file is empty: ${path.relative(root, assetPath)}`);
   assert.ok(
     wasmBytes.includes(assetBytes),
-    `WASM module does not contain bundled asset bytes from ${path.relative(root, assetPath)}`,
+    `WASM module does not contain bundled font bytes from ${path.relative(root, assetPath)}`,
   );
 }
 if (assetLock.packages.length > 0) {
