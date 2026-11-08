@@ -265,10 +265,9 @@ export async function buildWebLspBinaryBase() {
 
 export async function buildWebLspBinary() {
   await buildWebLspBinaryBase();
-  await fs.copyFile(
-    path.resolve(cwd, "crates/tinymist/pkg/tinymist_bg.wasm"),
-    path.resolve(vscodeDir, "out/tinymist_bg.wasm"),
-  );
+  const wasmInput = path.resolve(cwd, "target/wasm/tinymist_bg.wasm");
+  await fs.mkdir(path.dirname(wasmInput), { recursive: true });
+  await fs.copyFile(path.resolve(cwd, "crates/tinymist/pkg/tinymist_bg.wasm"), wasmInput);
 }
 
 /**

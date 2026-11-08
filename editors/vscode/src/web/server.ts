@@ -9,7 +9,7 @@ import { InitializeRequest } from "vscode-languageserver";
 // @ts-ignore
 import init, { TinymistLanguageServer } from "tinymist-web";
 // @ts-ignore
-import wasmURL from "../../out/tinymist_bg.wasm";
+import wasmURL from "../../../../target/wasm/tinymist_bg.wasm";
 
 /**
  * The rust stack trace is deep and so we have to increase the limit to check full content.
