@@ -42,10 +42,11 @@ await Promise.all([
     define: {
       global: "globalThis",
     },
-    // wasm-bindgen's synchronous initializer accepts the bytes. Keeping the
-    // module in the worker bundle also avoids a second network/file lookup.
+    // Emit WASM as a separate asset rather than inlining a large binary into
+    // web-server.js. The worker's async initializer fetches it relative to itself.
     loader: {
-      ".wasm": "binary",
+      ".wasm": "file",
     },
+    assetNames: "[name]",
   }),
 ]);
