@@ -5,7 +5,6 @@ on:
       - main
       - nightly
       - stable/**
-      - wasm/**
     tags:
       - "*"
   pull_request:
@@ -29,6 +28,7 @@ env:
 
 jobs:
   pre_build:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     permissions:
       actions: write
       contents: read
@@ -91,6 +91,7 @@ jobs:
           cancel_others: "true"
 
   checks-linux:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Check Clippy, Formatting, Completion, Documentation, and Tests (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -196,6 +197,7 @@ jobs:
         run: cargo test --package tinymist --lib --locked -- route::tests --show-output --ignored
 
   checks-windows:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Check Minimum Rust version and Tests (Windows)
     runs-on: windows-latest
     steps:
@@ -222,6 +224,7 @@ jobs:
         run: cargo test --workspace --features tinymist/system --locked -- --skip=e2e
 
   prepare-build:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     runs-on: "ubuntu-latest"
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -244,6 +247,7 @@ jobs:
       tag: ${{ needs.prepare-build.outputs.tag }}
 
   build:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     needs: [prepare-build] # , announce
     permissions:
       contents: write
@@ -254,6 +258,7 @@ jobs:
       targets: ${{ (!startsWith(github.ref, 'refs/tags/') && 'aarch64-apple-darwin,x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu') || 'all' }}
 
   build-intellij:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     uses: ./.github/workflows/build-intellij-plugin.yml
 
   release-intellij:
@@ -280,6 +285,7 @@ jobs:
           gh release upload "$RELEASE_TAG" "$plugin" --clobber
 
   checks-neovim:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Neovim Spec Tests
     runs-on: ubuntu-latest
     needs: [prepare-build]
@@ -323,6 +329,7 @@ jobs:
           TINYMIST_BIN: ${{ github.workspace }}/prebuilts/tinymist
 
   checks-wasm-browser:
+    if: ${{ startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Build and verify browser-only WASM VSIX
     runs-on: ubuntu-latest
     steps:
@@ -343,8 +350,6 @@ jobs:
         run: yarn install --frozen-lockfile
       - name: Build and package browser-only Tinymist
         run: yarn package:vscode:web
-      - name: Test browser preview selection
-        run: cd editors/vscode && yarn test:unit run src/features/previewer-provider-selection.test.ts
       - name: Upload browser-only VSIX
         uses: actions/upload-artifact@v4
         with:

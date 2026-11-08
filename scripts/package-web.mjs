@@ -30,6 +30,7 @@ for (const relativePath of requiredFiles) {
 }
 
 const wasmBytes = await fs.readFile(path.join(vscodeDir, "out/tinymist_bg.wasm"));
+const webExtensionBytes = await fs.readFile(path.join(vscodeDir, "out/extension.web.js"));
 const assetLock = JSON.parse(
   await fs.readFile(path.join(root, "target", "wasm-assets", "wasm-assets.lock.json"), "utf8"),
 );
@@ -65,8 +66,17 @@ if (assetLock.packages.length > 0) {
 }
 for (const marker of ["tinymist-preview-frame", "browserTransport"]) {
   assert.ok(
-    wasmBytes.includes(Buffer.from(marker)),
-    `WASM module does not contain bundled preview bridge marker: ${marker}`,
+    webExtensionBytes.includes(Buffer.from(marker)),
+    `Web extension bundle does not contain browser preview bridge marker: ${marker}`,
+  );
+}
+for (const method of [
+  "tinymist/preview/clientMessage",
+  "tinymist/preview/serverMessage",
+]) {
+  assert.ok(
+    wasmBytes.includes(Buffer.from(method)),
+    `WASM module is missing the browser preview LSP bridge method: ${method}`,
   );
 }
 
