@@ -1,6 +1,6 @@
 name: tinymist::ci
 
-# WASM PRs use one local-runner job to build and verify the offline browser VSIX.
+# WASM PRs run native regression suites as well as browser-only VSIX and Web Host tests.
 on:
   push:
     branches:
@@ -93,7 +93,6 @@ jobs:
           cancel_others: "true"
 
   checks-linux:
-    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Check Clippy, Formatting, Completion, Documentation, and Tests (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -199,7 +198,6 @@ jobs:
         run: cargo test --package tinymist --lib --locked -- route::tests --show-output --ignored
 
   checks-windows:
-    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Check Minimum Rust version and Tests (Windows)
     runs-on: windows-latest
     steps:
@@ -421,6 +419,18 @@ jobs:
         run: node scripts/bundle-wasm-assets.mjs --manifest wasm-assets-smoke.json --update-lock
       - name: Build and package browser-only Tinymist
         run: yarn package:vscode:web
+      - name: Build browser-host integration test bundle
+        run: node scripts/build-vscode-web-tests.mjs
+      - name: Install Chromium for VS Code Web tests
+        run: npx --yes --package=@vscode/test-web@0.0.81 playwright install --with-deps chromium
+      - name: Test packaged extension in the VS Code Web Extension Host
+        run: |
+          npx --yes @vscode/test-web@0.0.81 \
+            --browserType=chromium \
+            --extensionDevelopmentPath=target/tinymist-vscode-web-package \
+            --extensionTestsPath=target/tinymist-vscode-web-package/out/web-test-runner.js \
+            --headless=true \
+            editors/vscode/e2e-workspaces/book
       - name: Upload browser-only VSIX and generated asset lock
         id: upload_vsix
         uses: actions/upload-artifact@v4

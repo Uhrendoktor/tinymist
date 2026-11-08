@@ -166,15 +166,22 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
           vscode.commands.registerCommand("typst-preview.sync", panelSyncScrollLsp),
         ]),
     vscode.commands.registerCommand("tinymist.doInspectPreviewState", () => {
-      const tasks = Array.from(activeTask.values()).map((t) => {
-        return {
-          panel: !!t.panel,
-          taskId: t.taskId,
-          source: t.previewSource,
-        };
-      });
+      const tasks = Array.from(activeTask.values()).map((t) => ({
+        panel: !!t.panel,
+        taskId: t.taskId,
+        source: t.previewSource,
+        frontendStarted: t.browserTelemetry?.frontendStarted ?? false,
+        framesFromServer: t.browserTelemetry?.framesFromServer ?? 0,
+        framesToServer: t.browserTelemetry?.framesToServer ?? 0,
+        renderedFrames: t.browserTelemetry?.renderedFrames ?? 0,
+      }));
       return {
         tasks,
+        outlineItems: latestPreviewOutlineItems.map(({ title, span, position }) => ({
+          title,
+          span,
+          position,
+        })),
       };
     }),
     vscode.commands.registerCommand("tinymist.doDisposePreview", ({ taskId }) => {
@@ -317,6 +324,13 @@ function getPreviewConfCompat<T>(s: string) {
 /**
  * The arguments for launching the preview in a builtin vscode webview.
  */
+interface BrowserPreviewTelemetry {
+  frontendStarted: boolean;
+  framesFromServer: number;
+  framesToServer: number;
+  renderedFrames: number;
+}
+
 interface OpenPreviewInWebViewArgs {
   /**
    * The extension context.
@@ -330,6 +344,8 @@ interface OpenPreviewInWebViewArgs {
   taskId: string;
   /** Whether this preview uses the browser Webview/LSP data-plane bridge. */
   browserTransport: boolean;
+  /** Browser preview diagnostics; omitted for the native transport. */
+  browserTelemetry?: BrowserPreviewTelemetry;
   /**
    * The active editor owning *typst language document*.
    */
@@ -366,6 +382,7 @@ export async function openPreviewInWebView({
   task,
   taskId,
   browserTransport,
+  browserTelemetry,
   activeEditor,
   dataPlanePort,
   webviewPanel,
@@ -407,6 +424,9 @@ export async function openPreviewInWebView({
   // Replace the native WebSocket with a task-scoped extension-host bridge in the browser.
   const browserMessageListener = browserTransport
     ? tinymist.registerBrowserPreviewMessageListener(taskId, (message) => {
+        if (browserTelemetry) {
+          browserTelemetry.framesFromServer += 1;
+        }
         void panel.webview.postMessage({
           type: "tinymist-preview-frame",
           taskId,
@@ -416,11 +436,25 @@ export async function openPreviewInWebView({
     : undefined;
   const browserRequestListener = browserTransport
     ? panel.webview.onDidReceiveMessage((message) => {
-        if (
-          message?.type === "tinymist-preview-frame" &&
-          message.taskId === taskId &&
-          message.message
-        ) {
+        if (message?.taskId !== taskId) {
+          return;
+        }
+        if (message.type === "tinymist-preview-started") {
+          if (browserTelemetry) {
+            browserTelemetry.frontendStarted = true;
+          }
+          return;
+        }
+        if (message.type === "tinymist-preview-rendered") {
+          if (browserTelemetry) {
+            browserTelemetry.renderedFrames += 1;
+          }
+          return;
+        }
+        if (message.type === "tinymist-preview-frame" && message.message) {
+          if (browserTelemetry) {
+            browserTelemetry.framesToServer += 1;
+          }
           tinymist.sendBrowserPreviewMessage({ ...message.message, taskId });
         }
       })
@@ -496,6 +530,7 @@ interface TaskControlBlock {
   taskId: string;
   /// previewer metadata
   previewSource?: PreviewerSourceMetadata;
+  browserTelemetry?: BrowserPreviewTelemetry;
   /// cleanup routine for previews that do not own a webview panel
   dispose?: () => void;
 }
@@ -526,6 +561,9 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
   }
 
   const taskId = Math.random().toString(36).substring(7);
+  const browserTelemetry: BrowserPreviewTelemetry | undefined = browserTransport
+    ? { frontendStarted: false, framesFromServer: 0, framesToServer: 0, renderedFrames: 0 }
+    : undefined;
   const filePath = bindDocument.uri.fsPath;
 
   const disposes = new DisposeList();
@@ -601,6 +639,7 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
         task,
         taskId,
         browserTransport,
+        browserTelemetry,
         activeEditor: editor,
         dataPlanePort,
         webviewPanel,
@@ -626,6 +665,7 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
     panel,
     taskId,
     previewSource,
+    browserTelemetry,
     dispose: () => disposes.dispose(),
   });
   disposes.add(() => {
@@ -858,7 +898,10 @@ export enum ScrollSyncModeEnum {
 
 export type ScrollSyncMode = "never" | "onSelectionChangeByMouse" | "onSelectionChange";
 
+let latestPreviewOutlineItems: OutlineItemData[] = [];
+
 export function previewProcessOutline(outlineData: any) {
+  latestPreviewOutlineItems = Array.isArray(outlineData?.items) ? outlineData.items : [];
   contentPreviewProvider.then((p) => p.postOutlineItem(outlineData /* Outline */));
   outlineProvider.then((p) => p.postOutlineItem(outlineData /* Outline */));
 }

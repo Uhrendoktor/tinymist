@@ -462,6 +462,9 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
       }
 
       svgDoc.addChangement(message as any);
+      if ((window as any).vscode_state?.browserTransport === true) {
+        window.dispatchEvent(new Event("tinymist-preview-rendered"));
+      }
     }
 
     return dispose;

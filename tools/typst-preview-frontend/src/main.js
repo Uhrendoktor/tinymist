@@ -110,6 +110,11 @@ function setupVscodeChannel(nextWs) {
     // Native VS Code previews continue to use their real WebSocket endpoint.
     // Only the browser-only WASM extension opts into the Webview message bridge.
     if (window.vscode_state?.browserTransport === true) {
+      const taskId = window.vscode_state.taskId;
+      vscodeAPI.postMessage({ type: "tinymist-preview-started", taskId });
+      window.addEventListener("tinymist-preview-rendered", () => {
+        vscodeAPI.postMessage({ type: "tinymist-preview-rendered", taskId });
+      });
       installVscodeWebSocket(vscodeAPI);
     }
   }
