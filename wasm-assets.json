@@ -19,10 +19,17 @@
   "packages": [
     {
       "namespace": "preview",
-      "name": "quill",
-      "version": "0.8.0",
-      "license": "MIT",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+      "name": "cetz",
+      "version": "0.3.4",
+      "license": "LGPL-3.0-or-later",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
+    },
+    {
+      "namespace": "preview",
+      "name": "cetz",
+      "version": "0.5.2",
+      "license": "LGPL-3.0-or-later",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
     },
     {
       "namespace": "preview",
@@ -40,34 +47,6 @@
     },
     {
       "namespace": "preview",
-      "name": "kalt",
-      "version": "0.1.1",
-      "license": "MIT",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
-    },
-    {
-      "namespace": "preview",
-      "name": "unify",
-      "version": "0.8.1",
-      "license": "MIT",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
-    },
-    {
-      "namespace": "preview",
-      "name": "touying",
-      "version": "0.8.0",
-      "license": "MIT",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
-    },
-    {
-      "namespace": "preview",
-      "name": "physica",
-      "version": "0.9.8",
-      "license": "MIT",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
-    },
-    {
-      "namespace": "preview",
       "name": "codly",
       "version": "2.0.0",
       "license": "MIT",
@@ -82,8 +61,29 @@
     },
     {
       "namespace": "preview",
+      "name": "ctheorems",
+      "version": "2.0.0",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+    },
+    {
+      "namespace": "preview",
+      "name": "elembic",
+      "version": "1.1.1",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+    },
+    {
+      "namespace": "preview",
       "name": "fletcher",
       "version": "0.5.8",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+    },
+    {
+      "namespace": "preview",
+      "name": "glossarium",
+      "version": "0.5.10",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
     },
@@ -96,22 +96,8 @@
     },
     {
       "namespace": "preview",
-      "name": "showybox",
-      "version": "2.0.4",
-      "license": "MIT",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
-    },
-    {
-      "namespace": "preview",
-      "name": "ctheorems",
-      "version": "2.0.0",
-      "license": "MIT",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
-    },
-    {
-      "namespace": "preview",
-      "name": "glossarium",
-      "version": "0.5.10",
+      "name": "kalt",
+      "version": "0.1.1",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
     },
@@ -131,8 +117,15 @@
     },
     {
       "namespace": "preview",
-      "name": "tidy",
-      "version": "0.4.1",
+      "name": "physica",
+      "version": "0.9.8",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+    },
+    {
+      "namespace": "preview",
+      "name": "quill",
+      "version": "0.8.0",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
     },
@@ -145,24 +138,38 @@
     },
     {
       "namespace": "preview",
-      "name": "elembic",
-      "version": "1.1.1",
+      "name": "showybox",
+      "version": "2.0.4",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
     },
     {
       "namespace": "preview",
-      "name": "cetz",
-      "version": "0.5.2",
-      "license": "LGPL-3.0-or-later",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
+      "name": "tidy",
+      "version": "0.4.1",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
     },
     {
       "namespace": "preview",
-      "name": "cetz",
-      "version": "0.3.4",
-      "license": "LGPL-3.0-or-later",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
+      "name": "touying",
+      "version": "0.8.0",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+    },
+    {
+      "namespace": "preview",
+      "name": "unify",
+      "version": "0.8.1",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+    },
+    {
+      "namespace": "preview",
+      "name": "zero",
+      "version": "0.7.1",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/Mc-Zen/zero/main/LICENSE"
     }
   ],
   "fonts": [

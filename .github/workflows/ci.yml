@@ -331,7 +331,7 @@ jobs:
   checks-wasm-browser:
     if: ${{ startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Build and verify browser-only WASM VSIX
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1

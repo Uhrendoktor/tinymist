@@ -6,12 +6,12 @@ on:
       manifest_path:
         description: Repository-relative JSON asset manifest
         required: true
-        default: wasm-assets.json
+        default: wasm-assets-smoke.json
         type: string
       update_lock:
         description: Download assets and generate/update the lockfile
         required: true
-        default: false
+        default: true
         type: boolean
 
 # Manual asset builds are independent from regular CI and replace older
@@ -26,7 +26,7 @@ permissions:
 jobs:
   build:
     name: Fetch, embed, and package browser-only Tinymist
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
         with:
