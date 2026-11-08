@@ -32,11 +32,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+          cache: false
       - name: Verify repository-pinned Rust toolchain
         run: |
-          rustup show active-toolchain
           rustc --version
           cargo --version
+          rustup target list --installed | grep -Fx wasm32-unknown-unknown
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -47,9 +51,8 @@ jobs:
           node --version
           npm --version
           yarn --version
-      - name: Install WebAssembly target and wasm-pack
+      - name: Install wasm-pack if needed
         run: |
-          rustup target add wasm32-unknown-unknown
           if ! command -v wasm-pack >/dev/null 2>&1; then
             cargo install wasm-pack --locked
           fi
