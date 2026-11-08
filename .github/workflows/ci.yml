@@ -348,12 +348,19 @@ jobs:
           cargo install wasm-pack --locked
       - name: Install JavaScript dependencies
         run: yarn install --frozen-lockfile
+      - name: Dry-run smallest package and IBM Plex font
+        run: node scripts/bundle-wasm-assets.mjs --manifest wasm-assets-smoke.json --update-lock
       - name: Build and package browser-only Tinymist
         run: yarn package:vscode:web
-      - name: Upload browser-only VSIX
+        env:
+          TINYMIST_WASM_ASSET_UPDATE_LOCK: "true"
+      - name: Upload browser-only VSIX and generated asset lock
         uses: actions/upload-artifact@v4
         with:
           name: tinymist-web-vsix
-          path: dist/tinymist-web-*.vsix
+          path: |
+            dist/tinymist-web-*.vsix
+            wasm-assets.lock.json
+            target/wasm-assets/THIRD-PARTY-NOTICES.txt
           if-no-files-found: error
           retention-days: 14

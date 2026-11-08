@@ -282,8 +282,14 @@ async function main() {
   for (const packagePath of await listFiles(packageDir)) {
     if (!packagePath.endsWith(".typ")) continue;
     const source = await fs.readFile(packagePath, "utf8");
-    const pattern = /@([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+):([0-9A-Za-z.+-]+)/g;
-    for (const match of source.matchAll(pattern)) {
+    // Only resolve actual Typst import/include directives. Package names can
+    // also occur in documentation examples and metadata strings, which are
+    // not runtime dependencies.
+    const uncommented = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const pattern = /^\s*#(?:import|include)\s+["']@([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+):([0-9A-Za-z.+-]+)["']/gm;
+    for (const match of uncommented.matchAll(pattern)) {
       const dependency = match[1] + "/" + match[2] + ":" + match[3];
       if (!selectedPackages.has(dependency)) {
         throw new Error(
