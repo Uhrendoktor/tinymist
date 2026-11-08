@@ -187,6 +187,13 @@
     },
     {
       "namespace": "preview",
+      "name": "uniwarn",
+      "version": "0.1.1",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/typst/packages/main/packages/preview/uniwarn/0.1.1/LICENSE"
+    },
+    {
+      "namespace": "preview",
       "name": "zero",
       "version": "0.6.1",
       "license": "MIT",
