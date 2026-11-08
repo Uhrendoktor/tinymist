@@ -2,7 +2,7 @@ import { build } from "esbuild";
 import { polyfillNode } from "esbuild-plugin-polyfill-node";
 import * as fs from "fs";
 
-const target = ["es2020", "chrome61", "edge18", "firefox60"];
+const target = ["es2022"];
 
 if (!fs.existsSync("./out/extension.js")) {
   fs.mkdirSync("./out", { recursive: true });
