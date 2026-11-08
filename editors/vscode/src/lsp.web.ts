@@ -88,6 +88,15 @@ export async function createBrowserLanguageClient(
     worker.addEventListener("message", onMessage);
     worker.addEventListener("error", onError);
     worker.addEventListener("messageerror", onMessageError);
+
+    // Worker URLs can be rewritten to blob: URLs by browser extension hosts,
+    // where relative URL resolution is not valid. Resolve the WASM resource in
+    // the extension host and explicitly bootstrap the worker with its absolute URI.
+    const wasmResource = Uri.joinPath(context.extensionUri, "out", "tinymist_bg.wasm");
+    worker.postMessage({
+      method: "tinymistInitialize",
+      wasmUrl: wasmResource.toString(true),
+    });
   });
 
   /// To this time, we start to allow vscode to receive messages from the worker.

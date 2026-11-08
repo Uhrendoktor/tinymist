@@ -39,11 +39,32 @@ function reportStartupError(stage: string, error: unknown) {
   });
 }
 
+function waitForExtensionBootstrap(): Promise<string> {
+  return new Promise((resolve) => {
+    const onBootstrap = (event: MessageEvent) => {
+      if (event.data?.method !== "tinymistInitialize") return;
+      self.removeEventListener("message", onBootstrap);
+      resolve(event.data.wasmUrl);
+    };
+    self.addEventListener("message", onBootstrap);
+  });
+}
+
 async function startServer() {
   let stage = "create language-server connection";
 
   try {
     reportStartup("worker started");
+
+    // Browser extension hosts may run Worker scripts through blob: URLs,
+    // so the Worker cannot reliably resolve a sibling WASM asset itself. Wait
+    // for the extension host to provide the absolute extension resource URI.
+    stage = "waiting for extension resource URL";
+    reportStartup(stage);
+    const wasmResourceUrl = await waitForExtensionBootstrap();
+    if (typeof wasmResourceUrl !== "string" || wasmResourceUrl.length === 0) {
+      throw new Error("extension host did not provide a valid WASM resource URL");
+    }
 
     const connection = createConnection(
       //@ts-ignore
@@ -53,11 +74,10 @@ async function startServer() {
     );
 
     // Keep the WebAssembly module as a separate file. The async wasm-bindgen
-    // initializer fetches it relative to this worker, avoiding a huge inline
-    // binary in web-server.js and synchronous compilation on the worker thread.
-    stage = "load WebAssembly module";
+    // initializer fetches the absolute resource URL resolved by the extension host.
+    stage = `load WebAssembly module (${wasmURL})`;
     reportStartup(stage);
-    await init(new URL(wasmURL, self.location.href));
+    await init(wasmResourceUrl);
     reportStartup("WebAssembly module initialized");
     console.log(`tinymist-web ${TinymistLanguageServer.version()} wasm is loaded...`);
 
