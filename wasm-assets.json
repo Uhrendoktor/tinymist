@@ -19,6 +19,13 @@
   "packages": [
     {
       "namespace": "preview",
+      "name": "cetz-plot",
+      "version": "0.1.4",
+      "license": "LGPL-3.0-or-later",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
+    },
+    {
+      "namespace": "preview",
       "name": "cetz",
       "version": "0.3.4",
       "license": "LGPL-3.0-or-later",
@@ -40,22 +47,15 @@
     },
     {
       "namespace": "preview",
-      "name": "cetz-plot",
-      "version": "0.1.4",
-      "license": "LGPL-3.0-or-later",
-      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
-    },
-    {
-      "namespace": "preview",
-      "name": "codly",
-      "version": "2.0.0",
+      "name": "codly-languages",
+      "version": "0.1.10",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
     },
     {
       "namespace": "preview",
-      "name": "codly-languages",
-      "version": "0.1.10",
+      "name": "codly",
+      "version": "2.0.0",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
     },
@@ -114,6 +114,13 @@
       "version": "0.3.1",
       "license": "MIT",
       "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+    },
+    {
+      "namespace": "preview",
+      "name": "oxifmt",
+      "version": "0.2.1",
+      "license": "MIT-0",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT-0.txt"
     },
     {
       "namespace": "preview",
