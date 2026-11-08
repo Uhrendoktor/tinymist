@@ -20,7 +20,7 @@ on:
 # Keep at most one CI run active for a given PR or branch. A new push cancels
 # every older run for the same work instead of compiling stale commits.
 concurrency:
-  group: tinymist-browser-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: tinymist-browser-v2-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 env:
