@@ -390,11 +390,10 @@ jobs:
           source="dist/tinymist-web-${version}.vsix"
           test -s "$source"
 
-          # Keep the VSIX outside the checked-out repository so checkout/clean
-          # operations cannot remove it. Override this with TINYMIST_EXPORT_DIR
-          # in the self-hosted runner environment if a different mounted folder
-          # should be used.
-          export_dir="${TINYMIST_EXPORT_DIR:-$HOME/tinymist-exports}"
+          # The self-hosted runner uses clean:false so this workspace folder
+          # persists across PR checkouts. Override TINYMIST_EXPORT_DIR when a
+          # different persistent/mounted folder should be used.
+          export_dir="${TINYMIST_EXPORT_DIR:-$GITHUB_WORKSPACE/tinymist-export}"
           mkdir -p "$export_dir"
           destination="$export_dir/$(basename "$source")"
           install -m 0644 "$source" "$destination"
