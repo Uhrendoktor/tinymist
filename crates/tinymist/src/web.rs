@@ -75,6 +75,7 @@ impl TinymistLanguageServer {
     /// Handles internal events.
     pub fn on_event(&mut self, event_id: u32) {
         self.state.on_server_event(event_id);
+        poll_tokio_background_tasks();
     }
 
     /// Handles incoming requests.
@@ -93,7 +94,9 @@ impl TinymistLanguageServer {
             Ok(MaybeDone::Done(Err(err))) => lsp_err(err),
             // tokio doesn't get scheduled anymore after returning to js world
             Ok(MaybeDone::Future(fut)) => wasm_bindgen_futures::future_to_promise(async move {
-                Ok(match fut.await {
+                let result = fut.await;
+                poll_tokio_background_tasks();
+                Ok(match result {
                     Ok(t) => lsp_serialize(&t),
                     Err(err) => lsp_err(err),
                 })
@@ -105,7 +108,9 @@ impl TinymistLanguageServer {
             // },
             Ok(MaybeDone::Gone) => lsp_err(internal_error("response was weirdly gone")),
             Err(err) => lsp_err(err),
-        }
+        };
+        poll_tokio_background_tasks();
+        result
     }
 
     /// Handles incoming notifications.
@@ -123,6 +128,7 @@ impl TinymistLanguageServer {
         if let Err(err) = err {
             log::error!("Failed to handle notification {method}: {err:?}");
         }
+        poll_tokio_background_tasks();
     }
 
     /// Handles incoming responses.
@@ -136,6 +142,7 @@ impl TinymistLanguageServer {
             }
         };
         self.state.on_lsp_response(resp);
+        poll_tokio_background_tasks();
     }
 
     /// Get the version of the language server.
@@ -179,6 +186,22 @@ impl Default for Runtimes {
 }
 
 static RUNTIMES: LazyLock<Runtimes> = LazyLock::new(Runtimes::default);
+
+/// Drive tasks spawned on the current-thread Tokio runtime from the browser worker.
+///
+/// Tokio's current-thread scheduler suspends background tasks whenever its
+/// block_on call returns. Native Tinymist keeps the runtime continuously driven
+/// by its executor; the WebAssembly worker instead gives queued Tokio tasks a
+/// bounded poll after each JavaScript/LSP callback. This keeps preview actors
+/// and their data plane responsive without enabling unavailable I/O or timers.
+fn poll_tokio_background_tasks() {
+    #[cfg(target_arch = "wasm32")]
+    RUNTIMES.tokio_runtime.block_on(async {
+        for _ in 0..64 {
+            tokio::task::yield_now().await;
+        }
+    });
+}
 
 fn lsp_err(err: ResponseError) -> JsValue {
     to_js_value(&err).unwrap()
