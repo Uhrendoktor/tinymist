@@ -56,8 +56,7 @@ fn main() {
     }
     files.sort_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
 
-    let mut generated =
-        String::from("pub(crate) static WASM_FONT_FILES: &[(&str, &[u8])] = &[\n");
+    let mut generated = String::from("pub(crate) static WASM_FONT_FILES: &[(&str, &[u8])] = &[\n");
     for (relative, path) in files {
         let virtual_path = format!("/tinymist-wasm-assets/fonts/{relative}");
         let absolute_path = path.canonicalize().expect("font path must canonicalize");

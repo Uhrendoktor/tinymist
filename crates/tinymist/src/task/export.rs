@@ -22,12 +22,12 @@ use tinymist_std::error::prelude::*;
 use tinymist_std::fs::paths::write_atomic;
 use tinymist_std::path::PathClean;
 use tinymist_std::typst::TypstDocument;
-#[cfg(feature = "system")]
-use tinymist_task::{pdf_options, ExportBundleTask};
 use tinymist_task::{
     output_template, DocumentQuery, ExportMarkdownTask, ExportPngTask, ExportSvgTask, ExportTarget,
     ImageOutput, PathPattern, PdfExport, PngExport, SvgExport, TextExport,
 };
+#[cfg(feature = "system")]
+use tinymist_task::{pdf_options, ExportBundleTask};
 use tokio::sync::mpsc;
 use typlite::{Format, Typlite};
 #[cfg(feature = "system")]
