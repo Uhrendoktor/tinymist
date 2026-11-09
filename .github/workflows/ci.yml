@@ -423,6 +423,7 @@ jobs:
         run: |
           npx --yes @vscode/test-web@0.0.81 \
             --browserType=chromium \
+            --testRunnerDataDir="$HOME/.cache/tinymist-tools/vscode-test-web" \
             --extensionDevelopmentPath=target/tinymist-vscode-web-package \
             --extensionTestsPath=target/tinymist-vscode-web-package/out/web-test-runner.js \
             --headless=true \
