@@ -58,14 +58,16 @@ Review and commit both wasm-assets.json and wasm-assets.lock.json.
 Normal browser builds use --locked, download the assets again, verify every
 SHA-256, and fail on any manifest/lock mismatch.
 
-The WASM: custom browser package workflow accepts a manifest path and an
-update_lock switch. Run it with update_lock=true to produce a new lock,
-then commit the generated lock before making a reproducible build. Run it with
-update_lock=false for a strict locked build. The workflow uploads the VSIX,
-the generated lock snapshot, and third-party notices. For a non-default manifest,
-copy the uploaded snapshot to the matching adjacent lock path (for example,
-custom-assets.lock.json next to custom-assets.json) and commit it before running
-a locked build.
+To update the default lock on a trusted machine, run:
+
+```sh
+TINYMIST_WASM_ASSET_UPDATE_LOCK=true yarn package:vscode:web
+```
+
+Review and commit the generated lock before opening a PR. Normal CI always uses
+strict locked mode. A local alternate manifest can be selected with
+`TINYMIST_WASM_ASSET_MANIFEST=path/to/manifest.json`; its lock remains adjacent
+to the manifest.
 
 ## Runtime boundary
 
