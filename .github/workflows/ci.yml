@@ -347,6 +347,10 @@ jobs:
           if ! command -v unzip >/dev/null 2>&1; then
             packages+=(unzip)
           fi
+          # checkout@v4 needs Git >= 2.18 to keep the persistent workspace.
+          if ! command -v git >/dev/null 2>&1; then
+            packages+=(git)
+          fi
 
           if [ "${#packages[@]}" -gt 0 ]; then
             if command -v apt-get >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
@@ -379,6 +383,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: wasm32-unknown-unknown
+          components: rustfmt
           cache: false
       - name: Verify repository-pinned Rust toolchain
         run: |
