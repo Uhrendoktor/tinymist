@@ -356,33 +356,7 @@ jobs:
         run: yarn workspace tinymist test:unit run src/features/previewer-provider-selection.test.ts
       - name: Build and package browser-only Tinymist
         run: yarn package:vscode:web
-      - name: Build browser-host integration test bundle
-        run: node scripts/build-vscode-web-tests.mjs
-      - name: Ensure Chromium and system dependencies are cached
-        run: |
-          set -euo pipefail
-          tools_cache="$HOME/.cache/tinymist-tools"
-          mkdir -p "$tools_cache"
-          if ! npx --yes --package=@vscode/test-web@0.0.81 playwright install --list 2>/dev/null | grep -qi chromium; then
-            if [ ! -f "$tools_cache/playwright-chromium-system-deps-v1" ]; then
-              npx --yes --package=@vscode/test-web@0.0.81 playwright install --with-deps chromium
-              touch "$tools_cache/playwright-chromium-system-deps-v1"
-            else
-              npx --yes --package=@vscode/test-web@0.0.81 playwright install chromium
-            fi
-          fi
-      - name: Test packaged extension in the VS Code Web Extension Host
-        run: |
-          npx --yes @vscode/test-web@0.0.81 \
-            --browserType=chromium \
-            --testRunnerDataDir="$HOME/.cache/tinymist-tools/vscode-test-web" \
-            --extensionDevelopmentPath=target/tinymist-vscode-web-package \
-            --extensionTestsPath=target/tinymist-vscode-web-package/out/web-test-runner.js \
-            --headless=true \
-            editors/vscode/e2e-workspaces/book
-      - name: Run native Tinymist regression tests on the local runner
-        if: always()
-        run: cargo test -p tinymist --no-default-features --features tinymist/system,tinymist/preview,tinymist/no-content-hint --locked -- --skip=e2e
+
       - name: Export browser-only VSIX to persistent runner folder
         run: |
           set -euo pipefail
@@ -411,3 +385,30 @@ jobs:
             echo "- SHA-256: `$digest`"
           } >> "$GITHUB_STEP_SUMMARY"
           ls -lh "$destination" "$destination.sha256" "$export_dir/tinymist-web-latest.vsix"
+      - name: Build browser-host integration test bundle
+        run: node scripts/build-vscode-web-tests.mjs
+      - name: Ensure Chromium and system dependencies are cached
+        run: |
+          set -euo pipefail
+          tools_cache="$HOME/.cache/tinymist-tools"
+          mkdir -p "$tools_cache"
+          if ! npx --yes --package=@vscode/test-web@0.0.81 playwright install --list 2>/dev/null | grep -qi chromium; then
+            if [ ! -f "$tools_cache/playwright-chromium-system-deps-v1" ]; then
+              npx --yes --package=@vscode/test-web@0.0.81 playwright install --with-deps chromium
+              touch "$tools_cache/playwright-chromium-system-deps-v1"
+            else
+              npx --yes --package=@vscode/test-web@0.0.81 playwright install chromium
+            fi
+          fi
+      - name: Test packaged extension in the VS Code Web Extension Host
+        run: |
+          npx --yes @vscode/test-web@0.0.81 \
+            --browserType=chromium \
+            --testRunnerDataDir="$HOME/.cache/tinymist-tools/vscode-test-web" \
+            --extensionDevelopmentPath=target/tinymist-vscode-web-package \
+            --extensionTestsPath=target/tinymist-vscode-web-package/out/web-test-runner.js \
+            --headless=true \
+            editors/vscode/e2e-workspaces/book
+      - name: Run native Tinymist regression tests on the local runner
+        if: always()
+        run: cargo test -p tinymist --no-default-features --features tinymist/system,tinymist/preview,tinymist/no-content-hint --locked -- --skip=e2e
