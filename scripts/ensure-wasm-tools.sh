@@ -32,6 +32,7 @@ if [ ! -x "$wasm_pack_bin" ] || [ "$("$wasm_pack_bin" --version 2>/dev/null || t
   install -m 0755 "$binary" "$wasm_pack_bin"
 fi
 echo "$wasm_pack_home" >> "$GITHUB_PATH"
+export PATH="$wasm_pack_home:$PATH"
 
 node --version
 npm --version
