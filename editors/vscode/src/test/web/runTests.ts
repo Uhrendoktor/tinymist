@@ -174,7 +174,8 @@ export async function run(): Promise<void> {
 
   const firstSource = [
     "#set page(width: 360pt, height: 240pt, margin: 20pt)",
-    "#set text(size: 12pt)",
+    "#set text(font: \"Libertinus Serif\", size: 12pt)",
+    "#import \"@preview/cetz:0.5.3\": *",
     "= Browser preview acceptance",
     "First page content. ORIGINAL_MARKER.",
     "#pagebreak()",
@@ -223,6 +224,13 @@ export async function run(): Promise<void> {
       ? state.outlineItems
       : undefined;
   });
+  const compileErrors = vscode.languages
+    .getDiagnostics(firstDocument.uri)
+    .filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error);
+  assert(
+    compileErrors.length === 0,
+    `Bundled Cetz package and Libertinus Serif must compile offline: ${JSON.stringify(compileErrors.map((item) => item.message))}`,
+  );
 
   // Exercise the source-to-preview scroll command through the Web Worker LSP client.
   await vscode.window.showTextDocument(firstDocument);
