@@ -170,7 +170,10 @@ async function askAndRun<T>(
   title: string,
   cb: (meta: QuickExportFormatMeta) => T,
 ): Promise<T | undefined> {
-  const picked = await vscode.window.showQuickPick(quickExports, { title });
+  const availableExports = extensionState.features.web
+    ? quickExports.filter((format) => format.exportKind !== "Bundle")
+    : quickExports;
+  const picked = await vscode.window.showQuickPick(availableExports, { title });
 
   if (picked === undefined) {
     return;
@@ -273,6 +276,13 @@ export async function commandExport(
   opts?: ExportOpts,
   actionOpts?: ExportActionOpts,
 ): Promise<ExportResponse | null> {
+  if (extensionState.features.web && kind === "Bundle") {
+    await vscode.window.showErrorMessage(
+      "Directory-based Typst Bundle export is not available in the browser-only extension.",
+    );
+    return null;
+  }
+
   const uri = vscode.window.activeTextEditor?.document.uri.fsPath;
   if (!uri) {
     return null;

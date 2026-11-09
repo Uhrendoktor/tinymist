@@ -93,6 +93,10 @@ for (const marker of ["tinymist-preview-frame", "browserTransport"]) {
     `Web extension bundle does not contain browser preview bridge marker: ${marker}`,
   );
 }
+const embeddedPreviewHtml = await fs.readFile(
+  path.join(root, "crates", "tinymist-assets", "src", "typst-preview.html"),
+  "utf8",
+);
 for (const marker of [
   "tinymist-preview-document-ready",
   "tinymist-preview-frontend-ready",
@@ -100,8 +104,8 @@ for (const marker of [
   "typst-container",
 ]) {
   assert.ok(
-    wasmBytes.includes(Buffer.from(marker)),
-    `WASM module is missing embedded preview HTML marker: ${marker}`,
+    embeddedPreviewHtml.includes(marker),
+    `Built preview HTML is missing required browser marker: ${marker}`,
   );
 }
 for (const method of [
@@ -172,6 +176,37 @@ stagedManifest.displayName = "Tinymist Typst (WebAssembly)";
 delete stagedManifest.dependencies;
 delete stagedManifest.devDependencies;
 delete stagedManifest.scripts;
+
+// Remove manifest-contributed commands that depend on native local servers or
+// directory output. Their handlers are also not registered by the web entry.
+const unavailableWebCommands = new Set([
+  "typst-preview.browser",
+  "typst-preview.browser-slide",
+  "typst-preview.eject",
+]);
+if (stagedManifest.contributes) {
+  if (Array.isArray(stagedManifest.contributes.commands)) {
+    stagedManifest.contributes.commands = stagedManifest.contributes.commands.filter(
+      (command) => !unavailableWebCommands.has(command.command),
+    );
+  }
+  if (Array.isArray(stagedManifest.contributes.keybindings)) {
+    stagedManifest.contributes.keybindings = stagedManifest.contributes.keybindings.filter(
+      (binding) => !unavailableWebCommands.has(binding.command),
+    );
+  }
+  if (stagedManifest.contributes.menus) {
+    for (const entries of Object.values(stagedManifest.contributes.menus)) {
+      if (Array.isArray(entries)) {
+        for (let index = entries.length - 1; index >= 0; index -= 1) {
+          if (unavailableWebCommands.has(entries[index].command)) {
+            entries.splice(index, 1);
+          }
+        }
+      }
+    }
+  }
+}
 
 assert.ok(stagedManifest.browser, "browser entry point must be present");
 assert.equal(stagedManifest.main, undefined, "browser-only package must not declare main");

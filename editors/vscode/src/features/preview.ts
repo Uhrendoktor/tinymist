@@ -149,19 +149,27 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
     }),
     vscode.commands.registerCommand("tinymist.browsingPreview", launchBrowsingPreview),
     vscode.commands.registerCommand("typst-preview.preview", launch("webview", "doc")),
-    vscode.commands.registerCommand("typst-preview.browser", launch("browser", "doc")),
     vscode.commands.registerCommand("typst-preview.preview-slide", launch("webview", "slide")),
-    vscode.commands.registerCommand("typst-preview.browser-slide", launch("browser", "slide")),
+    ...(!extensionState.features.web
+      ? [
+          vscode.commands.registerCommand("typst-preview.browser", launch("browser", "doc")),
+          vscode.commands.registerCommand("typst-preview.browser-slide", launch("browser", "slide")),
+        ]
+      : []),
     vscode.commands.registerCommand("tinymist.previewDev", launchDevPreview("doc")),
     vscode.commands.registerCommand("tinymist.previewDevSlide", launchDevPreview("slide")),
     ...(isCompat
       ? [
-          vscode.commands.registerCommand("typst-preview.eject", ejectPreviewPanelCompat),
+          ...(!extensionState.features.web
+            ? [vscode.commands.registerCommand("typst-preview.eject", ejectPreviewPanelCompat)]
+            : []),
           vscode.commands.registerCommand("typst-preview.revealDocument", revealDocumentCompat),
           vscode.commands.registerCommand("typst-preview.sync", panelSyncScrollCompat),
         ]
       : [
-          vscode.commands.registerCommand("typst-preview.eject", ejectPreviewPanelLsp),
+          ...(!extensionState.features.web
+            ? [vscode.commands.registerCommand("typst-preview.eject", ejectPreviewPanelLsp)]
+            : []),
           vscode.commands.registerCommand("typst-preview.revealDocument", revealDocumentLsp),
           vscode.commands.registerCommand("typst-preview.sync", panelSyncScrollLsp),
         ]),

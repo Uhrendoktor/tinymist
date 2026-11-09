@@ -134,7 +134,10 @@ export async function run(): Promise<void> {
     const commands = await vscode.commands.getCommands(true);
     return commands.includes("tinymist.doInspectPreviewState") &&
       commands.includes("tinymist.doInspectPreviewHtml") &&
-      commands.includes("typst-preview.preview");
+      commands.includes("typst-preview.preview") &&
+      !commands.includes("typst-preview.browser") &&
+      !commands.includes("typst-preview.browser-slide") &&
+      !commands.includes("typst-preview.eject");
   });
 
   // Inspect the exact HTML served by the extension's active WASM language client.

@@ -4,8 +4,15 @@ The browser VSIX can carry a curated set of Typst packages and extra fonts witho
 requiring a runtime connection or a native executable. GitHub Actions downloads
 these assets while building the extension; Rust build scripts then use
 include_bytes! to place package files and font bytes into tinymist_bg.wasm.
-The resulting VSIX can compile those documents with the network disabled and
-without permission to execute native files.
+
+The WASM module has no ambient network client or operating-system filesystem
+access. It does not fetch packages or fonts and cannot enumerate or open host
+files by itself. Workspace source documents and their dependency contents are
+explicitly supplied by the VS Code extension host through the editor's
+workspace API bridge; those host-side reads are inputs to the compiler, not
+filesystem access granted to the WASM runtime. Package and font resolution is
+separate: those assets are read only from the static indexes embedded in the
+WASM binary.
 
 ## Add assets
 
@@ -74,17 +81,27 @@ to the manifest.
 - Package archives are unpacked during the GitHub build, then each package file
   is statically embedded in the WASM module. The browser package registry maps
   only manifest-listed namespace/name/version tuples to those in-module paths.
-- The package access model serves embedded package files before consulting the
-  normal VS Code workspace filesystem adapter. Workspace files still use
-  vscode.workspace.fs.
+- Package files are resolved only through the in-WASM static package index. A
+  manifest-listed package is served from embedded bytes; an unlisted package
+  returns `NotFound`. There is no remote or workspace-filesystem fallback for
+  Typst package assets.
+- Workspace source files are a separate input channel: the extension host
+  explicitly supplies file contents via the VS Code workspace API bridge. The
+  WASM module itself has no ambient filesystem or network capability.
 - Font bytes are registered in the browser font resolver from the same WASM
-  static bundle. No OS font enumeration, font download, or browser font upload
-  is needed at runtime for these bundled fonts.
+  static bundle. No OS font enumeration, runtime font download, or browser font
+  upload is used.
 - The browser's JS package resolver remains a fail-closed fallback. A package
   not in the build manifest returns NotFound; it is never downloaded at runtime.
 - The package/font payload bytes and their THIRD-PARTY-NOTICES.txt license text
   are compiled into tinymist_bg.wasm. The notices are also included as a
   human-readable VSIX file. No fetched asset is loaded as a runtime sidecar.
+
+The browser build intentionally omits two host services that cannot be
+provided by the no-server/no-ambient-filesystem runtime: external-browser
+preview (which requires a local HTTP/WebSocket listener) and directory-based
+Typst Bundle export. The integrated Webview preview and in-memory document
+exports remain available.
 
 Package imports are scanned in extracted .typ files. If a bundled package
 imports another versioned package not listed in the manifest, asset bundling
