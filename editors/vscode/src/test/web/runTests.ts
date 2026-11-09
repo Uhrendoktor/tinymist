@@ -50,6 +50,42 @@ async function inspectPreviewState(): Promise<PreviewState> {
   )) as PreviewState;
 }
 
+async function verifyWebviewModuleMessaging(): Promise<void> {
+  const panel = vscode.window.createWebviewPanel(
+    "tinymist-webview-module-smoke-test",
+    "Tinymist Webview Module Smoke Test",
+    vscode.ViewColumn.One,
+    { enableScripts: true },
+  );
+  let ready = false;
+  const listener = panel.webview.onDidReceiveMessage((message) => {
+    if (message?.type === "tinymist-webview-module-ready") {
+      ready = true;
+    }
+  });
+  panel.webview.html = `<!doctype html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+  <script type="module">
+    const vscode = acquireVsCodeApi();
+    vscode.postMessage({ type: "tinymist-webview-module-ready" });
+  </script>
+</body>
+</html>`;
+
+  try {
+    await waitFor(
+      "a minimal VS Code Webview module script to post a message",
+      async () => ready || undefined,
+      10_000,
+    );
+  } finally {
+    listener.dispose();
+    panel.dispose();
+  }
+}
+
 async function waitForTask(taskId: string, predicate: (task: PreviewTask) => boolean) {
   try {
     return await waitFor(`preview task ${taskId}`, async () => {
@@ -80,6 +116,8 @@ async function createTypstDocument(
 
 export async function run(): Promise<void> {
   assert(vscode.env.uiKind === vscode.UIKind.Web, "Tests must run in the VS Code Web Extension Host");
+
+  await verifyWebviewModuleMessaging();
 
   const extension = vscode.extensions.getExtension("myriad-dreamin.tinymist");
   assert(extension, "The browser-only Tinymist extension was not loaded");
