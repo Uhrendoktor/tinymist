@@ -173,6 +173,9 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
         taskId: t.taskId,
         source: t.previewSource,
         documentReady: t.browserTelemetry?.documentReady ?? false,
+        bootstrapStatePresent: t.browserTelemetry?.bootstrapStatePresent ?? false,
+        bootstrapBrowserTransport: t.browserTelemetry?.bootstrapBrowserTransport ?? false,
+        bootstrapHref: t.browserTelemetry?.bootstrapHref,
         frontendError: t.browserTelemetry?.frontendError,
         frontendStarted: t.browserTelemetry?.frontendStarted ?? false,
         browserTransportEnabled: t.browserTelemetry?.browserTransportEnabled ?? false,
@@ -188,6 +191,23 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
           span,
           position,
         })),
+      };
+    }),
+    vscode.commands.registerCommand("tinymist.doInspectPreviewHtml", async () => {
+      const html = await tinymist.getResource("/preview/index.html");
+      if (typeof html !== "string") {
+        return { isString: false };
+      }
+      return {
+        isString: true,
+        length: html.length,
+        statePlaceholder: html.includes("preview-arg:state:"),
+        documentReady: html.includes("tinymist-preview-document-ready"),
+        frontendReady: html.includes("tinymist-preview-frontend-ready"),
+        browserTransport: html.includes("browserTransport"),
+        assetRoot: html.includes("typst-webview-assets"),
+        externalScripts: [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map((match) => match[1]),
+        assetReferences: [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)].map((match) => match[1]).slice(0, 20),
       };
     }),
     vscode.commands.registerCommand("tinymist.doDisposePreview", ({ taskId }) => {

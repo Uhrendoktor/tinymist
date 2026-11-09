@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import { tinymist } from "../../lsp";
 
 type PreviewTask = {
   taskId: string;
@@ -8,6 +7,9 @@ type PreviewTask = {
   frontendStarted: boolean;
   browserTransportEnabled: boolean;
   documentReady: boolean;
+  bootstrapStatePresent: boolean;
+  bootstrapBrowserTransport: boolean;
+  bootstrapHref?: string;
   frontendError?: string;
   frontendTaskId?: string;
   framesFromServer: number;
@@ -131,28 +133,34 @@ export async function run(): Promise<void> {
   await waitFor("Tinymist preview commands", async () => {
     const commands = await vscode.commands.getCommands(true);
     return commands.includes("tinymist.doInspectPreviewState") &&
+      commands.includes("tinymist.doInspectPreviewHtml") &&
       commands.includes("typst-preview.preview");
   });
 
-  // Inspect the exact HTML served by the WASM language server. This catches a
-  // stale or dummy embedded frontend before the Webview timeout obscures it.
-  const previewHtml = await tinymist.getResource("/preview/index.html");
-  assert(typeof previewHtml === "string", "The WASM language server did not return preview HTML");
-  const previewHtmlMarkers = {
-    statePlaceholder: previewHtml.includes("preview-arg:state:"),
-    documentReady: previewHtml.includes("tinymist-preview-document-ready"),
-    frontendReady: previewHtml.includes("tinymist-preview-frontend-ready"),
-    browserTransport: previewHtml.includes("browserTransport"),
-    assetRoot: previewHtml.includes("typst-webview-assets"),
+  // Inspect the exact HTML served by the extension's active WASM language client.
+  const previewHtmlInfo = (await vscode.commands.executeCommand(
+    "tinymist.doInspectPreviewHtml",
+  )) as {
+    isString: boolean;
+    length?: number;
+    statePlaceholder?: boolean;
+    documentReady?: boolean;
+    frontendReady?: boolean;
+    browserTransport?: boolean;
+    assetRoot?: boolean;
+    externalScripts?: string[];
+    assetReferences?: string[];
   };
-  console.log("Embedded WASM preview HTML:", JSON.stringify({
-    length: previewHtml.length,
-    markers: previewHtmlMarkers,
-    externalScripts: [...previewHtml.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map((match) => match[1]),
-    assetReferences: [...previewHtml.matchAll(/(?:src|href)=["']([^"']+)["']/g)].map((match) => match[1]).slice(0, 20),
-  }));
-  for (const [marker, present] of Object.entries(previewHtmlMarkers)) {
-    assert(present, `The embedded WASM preview HTML is missing ${marker}`);
+  console.log("Embedded WASM preview HTML:", JSON.stringify(previewHtmlInfo));
+  assert(previewHtmlInfo?.isString, "The WASM language server did not return preview HTML");
+  for (const marker of [
+    "statePlaceholder",
+    "documentReady",
+    "frontendReady",
+    "browserTransport",
+    "assetRoot",
+  ] as const) {
+    assert(previewHtmlInfo[marker], `The embedded WASM preview HTML is missing ${marker}`);
   }
 
   const workspace = vscode.workspace.workspaceFolders?.[0]?.uri;
