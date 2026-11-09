@@ -98,7 +98,7 @@ impl TinymistLanguageServer {
             self.state.on_lsp_request(&method, req_id, params)
         };
 
-        match result {
+        let response = match result {
             Ok(MaybeDone::Done(Ok(t))) => lsp_serialize(&t),
             Ok(MaybeDone::Done(Err(err))) => lsp_err(err),
             // tokio doesn't get scheduled anymore after returning to js world
@@ -122,7 +122,7 @@ impl TinymistLanguageServer {
             Err(err) => lsp_err(err),
         };
         poll_tokio_background_tasks();
-        result
+        response
     }
 
     /// Handles incoming notifications.
