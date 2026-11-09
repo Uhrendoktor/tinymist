@@ -263,7 +263,9 @@ impl Previewer {
                     }
                     _ = async {
                         if let Some(shutdown_bell) = shutdown_bell.as_mut() {
-                            shutdown_bell.tick().await;
+                            // Interval::tick returns an Instant; discard it so
+                            // both branches of this async block return unit.
+                            let _ = shutdown_bell.tick().await;
                         } else {
                             std::future::pending::<()>().await;
                         }
