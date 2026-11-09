@@ -1,6 +1,9 @@
 //! Tinymist Web APIs.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::LazyLock;
+use std::task::{Context, Poll};
 
 use futures::future::MaybeDone;
 use sync_ls::{
@@ -74,7 +77,10 @@ impl TinymistLanguageServer {
 
     /// Handles internal events.
     pub fn on_event(&mut self, event_id: u32) {
-        self.state.on_server_event(event_id);
+        {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            self.state.on_server_event(event_id);
+        }
         poll_tokio_background_tasks();
     }
 
@@ -87,21 +93,27 @@ impl TinymistLanguageServer {
         };
 
         let req_id = self.next_request_id();
-        let result = self.state.on_lsp_request(&method, req_id, params);
+        let result = {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            self.state.on_lsp_request(&method, req_id, params)
+        };
 
         match result {
             Ok(MaybeDone::Done(Ok(t))) => lsp_serialize(&t),
             Ok(MaybeDone::Done(Err(err))) => lsp_err(err),
             // tokio doesn't get scheduled anymore after returning to js world
-            Ok(MaybeDone::Future(fut)) => wasm_bindgen_futures::future_to_promise(async move {
-                let result = fut.await;
-                poll_tokio_background_tasks();
-                Ok(match result {
-                    Ok(t) => lsp_serialize(&t),
-                    Err(err) => lsp_err(err),
+            Ok(MaybeDone::Future(fut)) => {
+                let future = TokioDrivenFuture::new(fut);
+                wasm_bindgen_futures::future_to_promise(async move {
+                    let result = future.await;
+                    poll_tokio_background_tasks();
+                    Ok(match result {
+                        Ok(t) => lsp_serialize(&t),
+                        Err(err) => lsp_err(err),
+                    })
                 })
-            })
-            .into(),
+                .into()
+            },
             // match futures::executor::block_on(fut) {
             //     Ok(t) => lsp_serialize(&t),
             //     Err(err) => lsp_err(err),
@@ -124,9 +136,12 @@ impl TinymistLanguageServer {
             }
         };
 
-        let err = self.state.on_notification(&method, params);
-        if let Err(err) = err {
-            log::error!("Failed to handle notification {method}: {err:?}");
+        {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            let err = self.state.on_notification(&method, params);
+            if let Err(err) = err {
+                log::error!("Failed to handle notification {method}: {err:?}");
+            }
         }
         poll_tokio_background_tasks();
     }
@@ -141,7 +156,10 @@ impl TinymistLanguageServer {
                 return;
             }
         };
-        self.state.on_lsp_response(resp);
+        {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            self.state.on_lsp_response(resp);
+        }
         poll_tokio_background_tasks();
     }
 
@@ -186,6 +204,39 @@ impl Default for Runtimes {
 }
 
 static RUNTIMES: LazyLock<Runtimes> = LazyLock::new(Runtimes::default);
+
+/// Poll an LSP response future with the WASM Tokio runtime entered.
+///
+/// LSP response futures are normally polled by the browser's JavaScript event
+/// loop. Entering the current-thread runtime for each poll allows them to call
+/// `tokio::spawn`; polling the runtime after each pending result advances the
+/// preview actors without requiring native threads or a timer/I/O driver.
+struct TokioDrivenFuture<F> {
+    future: Pin<Box<F>>,
+}
+
+impl<F> TokioDrivenFuture<F> {
+    fn new(future: F) -> Self {
+        Self {
+            future: Box::pin(future),
+        }
+    }
+}
+
+impl<F: Future> Future for TokioDrivenFuture<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        let result = {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            this.future.as_mut().poll(cx)
+        };
+
+        poll_tokio_background_tasks();
+        result
+    }
+}
 
 /// Drive tasks spawned on the current-thread Tokio runtime from the browser worker.
 ///
