@@ -93,6 +93,17 @@ for (const marker of ["tinymist-preview-frame", "browserTransport"]) {
     `Web extension bundle does not contain browser preview bridge marker: ${marker}`,
   );
 }
+for (const marker of [
+  "tinymist-preview-document-ready",
+  "tinymist-preview-frontend-ready",
+  "preview-arg:state:",
+  "typst-container",
+]) {
+  assert.ok(
+    wasmBytes.includes(Buffer.from(marker)),
+    `WASM module is missing embedded preview HTML marker: ${marker}`,
+  );
+}
 for (const method of [
   "tinymist/preview/clientMessage",
   "tinymist/preview/serverMessage",

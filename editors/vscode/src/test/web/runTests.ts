@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { tinymist } from "../../lsp";
 
 type PreviewTask = {
   taskId: string;
@@ -133,6 +134,27 @@ export async function run(): Promise<void> {
       commands.includes("typst-preview.preview");
   });
 
+  // Inspect the exact HTML served by the WASM language server. This catches a
+  // stale or dummy embedded frontend before the Webview timeout obscures it.
+  const previewHtml = await tinymist.getResource("/preview/index.html");
+  assert(typeof previewHtml === "string", "The WASM language server did not return preview HTML");
+  const previewHtmlMarkers = {
+    statePlaceholder: previewHtml.includes("preview-arg:state:"),
+    documentReady: previewHtml.includes("tinymist-preview-document-ready"),
+    frontendReady: previewHtml.includes("tinymist-preview-frontend-ready"),
+    browserTransport: previewHtml.includes("browserTransport"),
+    assetRoot: previewHtml.includes("typst-webview-assets"),
+  };
+  console.log("Embedded WASM preview HTML:", JSON.stringify({
+    length: previewHtml.length,
+    markers: previewHtmlMarkers,
+    externalScripts: [...previewHtml.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map((match) => match[1]),
+    assetReferences: [...previewHtml.matchAll(/(?:src|href)=["']([^"']+)["']/g)].map((match) => match[1]).slice(0, 20),
+  }));
+  for (const [marker, present] of Object.entries(previewHtmlMarkers)) {
+    assert(present, `The embedded WASM preview HTML is missing ${marker}`);
+  }
+
   const workspace = vscode.workspace.workspaceFolders?.[0]?.uri;
   assert(workspace, "VS Code Web test workspace was not opened");
 
@@ -170,8 +192,18 @@ export async function run(): Promise<void> {
   const firstTaskId = firstResponse.taskId;
 
   await waitForTask(firstTaskId, (task) => task.panel);
+  const bootstrapTask = await waitForTask(firstTaskId, (task) => task.documentReady);
+  assert(
+    bootstrapTask.bootstrapStatePresent,
+    `Preview Webview bootstrap did not receive its injected state: ${JSON.stringify(bootstrapTask)}`,
+  );
+  assert(
+    bootstrapTask.bootstrapBrowserTransport,
+    `Preview Webview bootstrap did not receive browserTransport=true: ${JSON.stringify(bootstrapTask)}`,
+  );
   await waitForTask(firstTaskId, (task) =>
     task.frontendStarted &&
+    task.browserTransportEnabled &&
     task.framesFromServer > 0 &&
     task.framesToServer > 0 &&
     task.renderedFrames > 0,

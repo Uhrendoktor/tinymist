@@ -333,6 +333,9 @@ function getPreviewConfCompat<T>(s: string) {
 interface BrowserPreviewTelemetry {
   frontendStarted: boolean;
   browserTransportEnabled?: boolean;
+  bootstrapStatePresent?: boolean;
+  bootstrapBrowserTransport?: boolean;
+  bootstrapHref?: string;
   frontendTaskId?: string;
   panelVisible?: boolean;
   panelActive?: boolean;
@@ -449,7 +452,13 @@ export async function openPreviewInWebView({
   const browserRequestListener = browserTransport
     ? panel.webview.onDidReceiveMessage((message) => {
         if (message?.type === "tinymist-preview-document-ready") {
-          if (browserTelemetry) browserTelemetry.documentReady = true;
+          if (browserTelemetry) {
+            browserTelemetry.documentReady = true;
+            browserTelemetry.bootstrapStatePresent = message.statePresent === true;
+            browserTelemetry.bootstrapBrowserTransport = message.browserTransport === true;
+            browserTelemetry.bootstrapHref =
+              typeof message.href === "string" ? message.href : undefined;
+          }
           return;
         }
         if (message?.type === "tinymist-preview-error") {
