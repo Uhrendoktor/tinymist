@@ -162,12 +162,11 @@ impl Default for Runtimes {
     fn default() -> Self {
         let mut builder = tokio::runtime::Builder::new_current_thread();
 
-        // Browser workers have no Mio-backed OS I/O reactor. Tokio's
-        // enable_all() enables I/O when the net feature is unified into the
-        // build, which is unsupported on wasm32-unknown-unknown. The browser
-        // language server only needs Tokio timers and current-thread scheduling.
-        #[cfg(target_arch = "wasm32")]
-        builder.enable_time();
+        // Browser workers have neither a Mio-backed I/O reactor nor a
+        // usable std::time::Instant. Tokio's timer driver calls Instant::now()
+        // during initialization, which traps on wasm32-unknown-unknown. Leave
+        // both I/O and timers disabled; wasm-bindgen futures are driven by the
+        // browser event loop. Native builds keep the full Tokio drivers.
         #[cfg(not(target_arch = "wasm32"))]
         builder.enable_all();
 
