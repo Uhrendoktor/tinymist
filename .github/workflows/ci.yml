@@ -373,12 +373,15 @@ jobs:
           echo "Export mount and runner identity:"
           id
           stat -c 'path=%n mode=%A uid=%u gid=%g owner=%U:%G' /artifacts
+          volume_owner="$(stat -c '%u:%g' /artifacts)"
           findmnt --target /artifacts --noheadings --output TARGET,SOURCE,FSTYPE,OPTIONS
           mount_options="$(findmnt --target /artifacts --noheadings --output OPTIONS)"
-          if printf '%s' "$mount_options" | tr ',' '\\n' | grep -Fxq ro; then
-            echo "::error::The linked /artifacts volume is mounted read-only. Remount it read-write on the runner host."
-            exit 1
-          fi
+          case ",${mount_options}," in
+            *,ro,*)
+              echo "::error::The linked /artifacts volume is mounted read-only. Remount it read-write on the runner host."
+              exit 1
+              ;;
+          esac
 
           export_as_root=0
           if ! test -w /artifacts; then
@@ -396,6 +399,8 @@ jobs:
             sudo -n install -m 0644 "$source" "$destination"
             sudo -n sh -c 'sha256sum "$1" > "$2"' sh "$destination" "$destination.sha256"
             sudo -n ln -sfn "$(basename "$destination")" /artifacts/tinymist-web-latest.vsix
+            sudo -n chown "$volume_owner" "$destination" "$destination.sha256"
+            sudo -n chown -h "$volume_owner" /artifacts/tinymist-web-latest.vsix
           else
             probe="$(mktemp /artifacts/.tinymist-write-test.XXXXXX)"
             rm -f "$probe"
@@ -414,9 +419,9 @@ jobs:
           {
             echo "### Browser-only VSIX exported to linked /artifacts volume"
             echo
-            echo "- File: `$destination`"
-            echo "- Latest link: `/artifacts/tinymist-web-latest.vsix`"
-            echo "- SHA-256: `$destination_digest`"
+            echo "- File: $destination"
+            echo "- Latest link: /artifacts/tinymist-web-latest.vsix"
+            echo "- SHA-256: $destination_digest"
             echo
             echo "Volume mount:"
             echo

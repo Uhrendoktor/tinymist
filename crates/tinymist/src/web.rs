@@ -163,6 +163,15 @@ impl TinymistLanguageServer {
         poll_tokio_background_tasks();
     }
 
+    /// Drive background Tokio tasks from the browser worker event loop.
+    ///
+    /// WebAssembly workers have no native executor thread to keep a current-thread
+    /// runtime alive between LSP callbacks. The worker schedules this bounded
+    /// pump periodically so preview actors and rendering tasks keep progressing.
+    pub fn poll_runtime(&mut self) {
+        poll_tokio_background_tasks();
+    }
+
     /// Get the version of the language server.
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()

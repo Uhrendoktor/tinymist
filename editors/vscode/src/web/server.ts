@@ -134,6 +134,12 @@ async function startServer() {
     connection.sendNotification("serverWorkerReady");
     // Starts the language server.
     connection.listen();
+
+    // A browser worker has no native Tokio executor thread. Keep its
+    // current-thread runtime progressing between LSP and Webview messages.
+    setInterval(() => {
+      (bridge as any).poll_runtime();
+    }, 16);
   } catch (error) {
     reportStartupError(stage, error);
     throw error;
