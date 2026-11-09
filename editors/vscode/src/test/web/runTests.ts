@@ -150,7 +150,7 @@ export async function run(): Promise<void> {
     documentReady?: boolean;
     frontendReady?: boolean;
     browserTransport?: boolean;
-    assetRoot?: boolean;
+    assetsInline?: boolean;
     externalScripts?: string[];
     assetReferences?: string[];
   };
@@ -161,7 +161,7 @@ export async function run(): Promise<void> {
     "documentReady",
     "frontendReady",
     "browserTransport",
-    "assetRoot",
+    "assetsInline",
   ] as const) {
     assert(previewHtmlInfo[marker], `The embedded WASM preview HTML is missing ${marker}`);
   }

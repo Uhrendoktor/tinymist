@@ -206,6 +206,9 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
       if (typeof html !== "string") {
         return { isString: false };
       }
+      const externalScripts = [
+        ...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g),
+      ].map((match) => match[1]);
       return {
         isString: true,
         length: html.length,
@@ -213,8 +216,8 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
         documentReady: html.includes("tinymist-preview-document-ready"),
         frontendReady: html.includes("tinymist-preview-frontend-ready"),
         browserTransport: html.includes("browserTransport"),
-        assetRoot: html.includes("typst-webview-assets"),
-        externalScripts: [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map((match) => match[1]),
+        assetsInline: externalScripts.length === 0 && !html.includes("typst-webview-assets"),
+        externalScripts,
         assetReferences: [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)].map((match) => match[1]).slice(0, 20),
       };
     }),
