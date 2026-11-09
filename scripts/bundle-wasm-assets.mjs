@@ -7,6 +7,7 @@ import process from "node:process";
 
 const root = path.resolve(import.meta.dirname, "..");
 const outputDir = path.join(root, "target", "wasm-assets");
+const downloadCacheDir = path.join(root, "target", "wasm-assets-download-cache");
 const packageDir = path.join(outputDir, "packages");
 const fontDir = path.join(outputDir, "fonts");
 const noticesDir = path.join(outputDir, "notices");
@@ -40,8 +41,25 @@ function sha256(data) {
   return createHash("sha256").update(data).digest("hex");
 }
 
-async function fetchBytes(url, maxBytes, label) {
+async function fetchBytes(url, maxBytes, label, expectedSha256) {
   assert.match(url, /^https:\/\//, label + " URL must use HTTPS");
+  const cachePath = path.join(downloadCacheDir, sha256(Buffer.from(url)) + ".bin");
+
+  // Locked mode reuses only data whose bytes match the committed lock. Update
+  // mode deliberately fetches again so it can record an intentional change.
+  if (expectedSha256) {
+    try {
+      const cached = await fs.readFile(cachePath);
+      if (cached.length <= maxBytes && sha256(cached) === expectedSha256) {
+        console.log("Using SHA-256-verified cached " + label);
+        return cached;
+      }
+      await fs.rm(cachePath, { force: true });
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok) throw new Error(label + " download failed: HTTP " + response.status + " from " + url);
 
@@ -55,7 +73,11 @@ async function fetchBytes(url, maxBytes, label) {
     if (total > maxBytes) throw new Error(label + " exceeds its configured size limit");
     chunks.push(Buffer.from(chunk));
   }
-  return Buffer.concat(chunks);
+
+  const bytes = Buffer.concat(chunks);
+  await fs.mkdir(downloadCacheDir, { recursive: true });
+  await fs.writeFile(cachePath, bytes);
+  return bytes;
 }
 
 function packageKey(item) {
@@ -219,7 +241,12 @@ async function main() {
       assert.equal(previous.licenseUrl, item.licenseUrl, "package license URL changed for " + id + "; update the lock");
     }
 
-    const archive = await fetchBytes(url, limits.maxPackageBytes, "package " + id);
+    const archive = await fetchBytes(
+      url,
+      limits.maxPackageBytes,
+      "package " + id,
+      args.mode === "locked" ? previous.sha256 : undefined,
+    );
     const digest = sha256(archive);
     if (args.mode === "locked") {
       assert.equal(digest, previous.sha256, "SHA-256 mismatch for package " + id);
@@ -234,7 +261,12 @@ async function main() {
     extractPackage(safeArchive, destination);
     await fs.rm(safeArchive, { force: true });
 
-    const notice = await fetchBytes(item.licenseUrl, 256 * 1024, "license notice for " + id);
+    const notice = await fetchBytes(
+      item.licenseUrl,
+      256 * 1024,
+      "license notice for " + id,
+      args.mode === "locked" ? previous.licenseSha256 : undefined,
+    );
     const licenseDigest = sha256(notice);
     if (args.mode === "locked") {
       assert.equal(licenseDigest, previous.licenseSha256, "license notice SHA-256 mismatch for package " + id);
@@ -257,7 +289,12 @@ async function main() {
       assert.equal(previous.licenseUrl, item.licenseUrl, "font license URL changed for " + id + "; update the lock");
     }
 
-    const bytes = await fetchBytes(item.url, limits.maxFontBytes, "font " + id);
+    const bytes = await fetchBytes(
+      item.url,
+      limits.maxFontBytes,
+      "font " + id,
+      args.mode === "locked" ? previous.sha256 : undefined,
+    );
     const digest = sha256(bytes);
     if (args.mode === "locked") {
       assert.equal(digest, previous.sha256, "SHA-256 mismatch for font " + id);
@@ -266,7 +303,12 @@ async function main() {
     if (totalBytes > limits.maxTotalBytes) throw new Error("WASM assets exceed maxTotalBytes");
 
     await fs.writeFile(path.join(fontDir, item.file), bytes);
-    const notice = await fetchBytes(item.licenseUrl, 256 * 1024, "license notice for font " + id);
+    const notice = await fetchBytes(
+      item.licenseUrl,
+      256 * 1024,
+      "license notice for font " + id,
+      args.mode === "locked" ? previous.licenseSha256 : undefined,
+    );
     const licenseDigest = sha256(notice);
     if (args.mode === "locked") {
       assert.equal(licenseDigest, previous.licenseSha256, "license notice SHA-256 mismatch for font " + id);

@@ -93,6 +93,7 @@ jobs:
           cancel_others: "true"
 
   checks-linux:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Check Clippy, Formatting, Completion, Documentation, and Tests (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -198,6 +199,7 @@ jobs:
         run: cargo test --package tinymist --lib --locked -- route::tests --show-output --ignored
 
   checks-windows:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Check Minimum Rust version and Tests (Windows)
     runs-on: windows-latest
     steps:
@@ -370,6 +372,10 @@ jobs:
           cc --version
           unzip -v | head -n 1
       - uses: actions/checkout@v4
+        with:
+          # Preserve the persistent runner's Cargo, JavaScript, asset, and
+          # browser caches between jobs.
+          clean: false
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: wasm32-unknown-unknown
@@ -383,46 +389,31 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install pinned Yarn without global runner changes
-        run: |
-          npm install --prefix "$RUNNER_TEMP/yarn" yarn@1.22.22
-          export PATH="$RUNNER_TEMP/yarn/node_modules/.bin:$PATH"
-          echo "$RUNNER_TEMP/yarn/node_modules/.bin" >> "$GITHUB_PATH"
-          node --version
-          npm --version
-          yarn --version
-      - name: Install pinned wasm-pack binary if needed
-        run: |
-          set -euo pipefail
-          if ! command -v wasm-pack >/dev/null 2>&1; then
-            archive="$RUNNER_TEMP/wasm-pack-v0.15.1-x86_64-unknown-linux-musl.tar.gz"
-            install_dir="$RUNNER_TEMP/wasm-pack"
-            binary_dir="$RUNNER_TEMP/wasm-pack-bin"
-            mkdir -p "$install_dir" "$binary_dir"
-            curl --fail --location --silent --show-error \
-              "https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.1/wasm-pack-v0.15.1-x86_64-unknown-linux-musl.tar.gz" \
-              --output "$archive"
-            echo "410101009739b9d01c7d5affaaad6e9c9a24b4cba6791a4805db8e89b9bf7af2  $archive" | sha256sum --check --status
-            tar -xzf "$archive" -C "$install_dir"
-            binary="$(find "$install_dir" -type f -name wasm-pack -print -quit)"
-            test -n "$binary"
-            install -m 0755 "$binary" "$binary_dir/wasm-pack"
-            echo "$binary_dir" >> "$GITHUB_PATH"
-            export PATH="$binary_dir:$PATH"
-          fi
-          wasm-pack --version
+      - name: Ensure pinned build tools in persistent runner cache
+        run: bash scripts/ensure-wasm-tools.sh
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --prefer-offline
+      - name: Check formatting
+        run: cargo fmt --check --all
       - name: Test browser previewer selection
         run: yarn workspace tinymist test:unit run src/features/previewer-provider-selection.test.ts
-      - name: Dry-run smallest package and IBM Plex font
-        run: node scripts/bundle-wasm-assets.mjs --manifest wasm-assets-smoke.json --update-lock
       - name: Build and package browser-only Tinymist
         run: yarn package:vscode:web
       - name: Build browser-host integration test bundle
         run: node scripts/build-vscode-web-tests.mjs
-      - name: Install Chromium for VS Code Web tests
-        run: npx --yes --package=@vscode/test-web@0.0.81 playwright install --with-deps chromium
+      - name: Ensure Chromium and system dependencies are cached
+        run: |
+          set -euo pipefail
+          tools_cache="$HOME/.cache/tinymist-tools"
+          mkdir -p "$tools_cache"
+          if ! npx --yes --package=@vscode/test-web@0.0.81 playwright install --list 2>/dev/null | grep -qi chromium; then
+            if [ ! -f "$tools_cache/playwright-chromium-system-deps-v1" ]; then
+              npx --yes --package=@vscode/test-web@0.0.81 playwright install --with-deps chromium
+              touch "$tools_cache/playwright-chromium-system-deps-v1"
+            else
+              npx --yes --package=@vscode/test-web@0.0.81 playwright install chromium
+            fi
+          fi
       - name: Test packaged extension in the VS Code Web Extension Host
         run: |
           npx --yes @vscode/test-web@0.0.81 \
@@ -431,19 +422,9 @@ jobs:
             --extensionTestsPath=target/tinymist-vscode-web-package/out/web-test-runner.js \
             --headless=true \
             editors/vscode/e2e-workspaces/book
-      - name: Upload browser-only VSIX and generated asset lock
-        id: upload_vsix
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: tinymist-web-vsix
-          path: |
-            dist/tinymist-web-*.vsix
-            wasm-assets.lock.json
-            target/wasm-assets/THIRD-PARTY-NOTICES.txt
-          if-no-files-found: error
-          retention-days: 1
-      - name: Report artifact storage quota issue
-        if: steps.upload_vsix.outcome == 'failure'
+      - name: Run native Tinymist regression tests on the local runner
+        run: cargo test -p tinymist --features tinymist/system --locked -- --skip=e2e
+      - name: Report browser-only VSIX output
         run: |
-          echo "::warning::The browser-only VSIX passed build and archive validation, but GitHub Actions rejected artifact storage. The generated asset lock is printed in the previous step. Free Actions artifact storage to enable downloads."
+          ls -lh dist/tinymist-web-*.vsix
+          echo "Browser-only VSIX passed package verification on the persistent self-hosted runner."

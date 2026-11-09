@@ -67,6 +67,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
+          clean: false
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: wasm32-unknown-unknown
@@ -79,36 +80,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install pinned Yarn without global runner changes
-        run: |
-          npm install --prefix "$RUNNER_TEMP/yarn" yarn@1.22.22
-          export PATH="$RUNNER_TEMP/yarn/node_modules/.bin:$PATH"
-          echo "$RUNNER_TEMP/yarn/node_modules/.bin" >> "$GITHUB_PATH"
-          node --version
-          npm --version
-          yarn --version
-      - name: Install pinned wasm-pack binary if needed
-        run: |
-          set -euo pipefail
-          if ! command -v wasm-pack >/dev/null 2>&1; then
-            archive="$RUNNER_TEMP/wasm-pack-v0.15.1-x86_64-unknown-linux-musl.tar.gz"
-            install_dir="$RUNNER_TEMP/wasm-pack"
-            binary_dir="$RUNNER_TEMP/wasm-pack-bin"
-            mkdir -p "$install_dir" "$binary_dir"
-            curl --fail --location --silent --show-error \
-              "https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.1/wasm-pack-v0.15.1-x86_64-unknown-linux-musl.tar.gz" \
-              --output "$archive"
-            echo "410101009739b9d01c7d5affaaad6e9c9a24b4cba6791a4805db8e89b9bf7af2  $archive" | sha256sum --check --status
-            tar -xzf "$archive" -C "$install_dir"
-            binary="$(find "$install_dir" -type f -name wasm-pack -print -quit)"
-            test -n "$binary"
-            install -m 0755 "$binary" "$binary_dir/wasm-pack"
-            echo "$binary_dir" >> "$GITHUB_PATH"
-            export PATH="$binary_dir:$PATH"
-          fi
-          wasm-pack --version
+      - name: Ensure pinned build tools in persistent runner cache
+        run: bash scripts/ensure-wasm-tools.sh
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --prefer-offline
       - name: Build browser-only VSIX with selected assets
         run: yarn package:vscode:web
         env:

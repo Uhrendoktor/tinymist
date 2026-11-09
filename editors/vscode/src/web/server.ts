@@ -7,7 +7,7 @@ import {
 import { InitializeRequest } from "vscode-languageserver";
 
 // @ts-ignore
-import init, { TinymistLanguageServer } from "tinymist-web";
+import init, { init_runtime, TinymistLanguageServer } from "tinymist-web";
 // @ts-ignore
 import wasmURL from "../../../../target/wasm/tinymist_bg.wasm";
 
@@ -80,6 +80,11 @@ async function startServer() {
     await init(wasmResourceUrl);
     reportStartup("WebAssembly module initialized");
     console.log(`tinymist-web ${TinymistLanguageServer.version()} wasm is loaded...`);
+
+    stage = "initialize Tokio runtime";
+    reportStartup(stage);
+    init_runtime();
+    reportStartup("Tokio runtime initialized");
 
     /**
      * The events are stored in the array and will be processed after the response is sent to the client.

@@ -18,6 +18,14 @@ pub fn version() -> String {
     LONG_VERSION.clone()
 }
 
+/// Initialize the browser runtime before attaching the LSP transport. Keeping
+/// this preflight separate makes worker-startup failures identify the runtime
+/// stage rather than appearing as an opaque language-server constructor panic.
+#[wasm_bindgen]
+pub fn init_runtime() {
+    let _ = &RUNTIMES.tokio_runtime;
+}
+
 /// TinymistLanguageServer implements the LSP protocol for Typst documents
 /// in a WebAssembly environment
 #[wasm_bindgen]
@@ -152,10 +160,20 @@ pub struct Runtimes {
 
 impl Default for Runtimes {
     fn default() -> Self {
-        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
+        let mut builder = tokio::runtime::Builder::new_current_thread();
+
+        // Browser workers have no Mio-backed OS I/O reactor. Tokio's
+        // enable_all() enables I/O when the net feature is unified into the
+        // build, which is unsupported on wasm32-unknown-unknown. The browser
+        // language server only needs Tokio timers and current-thread scheduling.
+        #[cfg(target_arch = "wasm32")]
+        builder.enable_time();
+        #[cfg(not(target_arch = "wasm32"))]
+        builder.enable_all();
+
+        let tokio_runtime = builder
             .build()
-            .unwrap();
+            .expect("failed to build the Tinymist Tokio runtime");
 
         Self { tokio_runtime }
     }
