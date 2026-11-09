@@ -49,11 +49,20 @@ async function inspectPreviewState(): Promise<PreviewState> {
 }
 
 async function waitForTask(taskId: string, predicate: (task: PreviewTask) => boolean) {
-  return await waitFor(`preview task ${taskId}`, async () => {
+  try {
+    return await waitFor(`preview task ${taskId}`, async () => {
+      const state = await inspectPreviewState();
+      const task = state.tasks.find((candidate) => candidate.taskId === taskId);
+      return task && predicate(task) ? task : undefined;
+    }, 45_000);
+  } catch (error) {
     const state = await inspectPreviewState();
     const task = state.tasks.find((candidate) => candidate.taskId === taskId);
-    return task && predicate(task) ? task : undefined;
-  });
+    throw new Error(
+      `${String(error)}; last preview task state: ${JSON.stringify(task ?? null)}; ` +
+        `all active tasks: ${JSON.stringify(state.tasks)}`,
+    );
+  }
 }
 
 async function createTypstDocument(
