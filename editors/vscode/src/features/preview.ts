@@ -168,6 +168,8 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
     vscode.commands.registerCommand("tinymist.doInspectPreviewState", () => {
       const tasks = Array.from(activeTask.values()).map((t) => ({
         panel: !!t.panel,
+        panelVisible: t.panel?.visible ?? false,
+        panelActive: t.panel?.active ?? false,
         taskId: t.taskId,
         source: t.previewSource,
         frontendStarted: t.browserTelemetry?.frontendStarted ?? false,
@@ -330,6 +332,13 @@ interface BrowserPreviewTelemetry {
   frontendStarted: boolean;
   browserTransportEnabled?: boolean;
   frontendTaskId?: string;
+  panelVisible?: boolean;
+  panelActive?: boolean;
+  htmlLength?: number;
+  htmlHasFrontendReadyMarker?: boolean;
+  htmlHasInjectedState?: boolean;
+  inlineModuleScriptCount?: number;
+  externalScriptCount?: number;
   framesFromServer: number;
   framesToServer: number;
   renderedFrames: number;
@@ -525,6 +534,22 @@ export async function openPreviewInWebView({
 
   // Sets the HTML content to the webview panel.
   // This will reload the webview panel if it's already opened.
+  if (browserTelemetry) {
+    browserTelemetry.panelVisible = panel.visible;
+    browserTelemetry.panelActive = panel.active;
+    browserTelemetry.htmlLength = html.length;
+    browserTelemetry.htmlHasFrontendReadyMarker = html.includes("tinymist-preview-frontend-ready");
+    browserTelemetry.htmlHasInjectedState = !html.includes("preview-arg:state:");
+    browserTelemetry.inlineModuleScriptCount = (html.match(/<script[^>]*type=["']module["'][^>]*>/g) || []).length;
+    browserTelemetry.externalScriptCount = (html.match(/<script[^>]+src=/g) || []).length;
+  }
+  // Some browser-host test layouts do not leave a newly created second-column
+  // Webview visible. Reveal it explicitly so its scripts and message channel
+  // are initialized even when the source editor was opened in column one.
+  if (browserTransport) {
+    panel.reveal(panel.viewColumn, true);
+  }
+
   panel.webview.html = html;
   return {
     panel,
