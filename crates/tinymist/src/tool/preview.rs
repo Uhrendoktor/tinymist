@@ -943,9 +943,7 @@ impl ServerState {
         params: BrowserPreviewDataMessage,
     ) -> LspResult<()> {
         let task_id = params.task_id.clone();
-        log::info!(
-            "[browser-preview-debug] Rust LSP handler received client frame task={task_id}"
-        );
+        log::info!("[browser-preview-debug] Rust LSP handler received client frame task={task_id}");
         let message = params.into_ws_message().map_err(invalid_params)?;
         self.preview.browser_message(task_id, message)
     }
