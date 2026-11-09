@@ -357,34 +357,47 @@ jobs:
       - name: Build and package browser-only Tinymist
         run: yarn package:vscode:web
 
-      - name: Export browser-only VSIX to persistent runner folder
+      - name: Export browser-only VSIX to linked /artifacts volume
         run: |
           set -euo pipefail
           version="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync("editors/vscode/package.json", "utf8")).version)')"
           source="dist/tinymist-web-${version}.vsix"
+          destination="/artifacts/$(basename "$source")"
           test -s "$source"
 
-          # The self-hosted runner uses clean:false so this workspace folder
-          # persists across PR checkouts. Override TINYMIST_EXPORT_DIR when a
-          # different persistent/mounted folder should be used.
-          export_dir="${TINYMIST_EXPORT_DIR:-$GITHUB_WORKSPACE/tinymist-export}"
-          mkdir -p "$export_dir"
-          destination="$export_dir/$(basename "$source")"
+          # Do not create a fallback directory on the runner's root filesystem:
+          # /artifacts must be the linked volume requested for this export.
+          test -d /artifacts || { echo "::error::The linked /artifacts volume is not mounted."; exit 1; }
+          mountpoint -q /artifacts || { echo "::error::/artifacts exists but is not a mount point; refusing to export to ephemeral runner storage."; exit 1; }
+          test -w /artifacts || { echo "::error::The /artifacts volume is not writable by the runner."; exit 1; }
+
+          echo "Export mount:"
+          findmnt --target /artifacts --noheadings --output TARGET,SOURCE,FSTYPE,OPTIONS
           install -m 0644 "$source" "$destination"
           sha256sum "$destination" > "$destination.sha256"
-          ln -sfn "$(basename "$destination")" "$export_dir/tinymist-web-latest.vsix"
+          ln -sfn "$(basename "$destination")" /artifacts/tinymist-web-latest.vsix
 
-          digest="$(sha256sum "$destination" | cut -d ' ' -f 1)"
+          source_digest="$(sha256sum "$source" | cut -d ' ' -f 1)"
+          destination_digest="$(sha256sum "$destination" | cut -d ' ' -f 1)"
+          test "$source_digest" = "$destination_digest"
+          (cd /artifacts && sha256sum --check "$(basename "$destination").sha256")
+          cmp -s "$source" "$destination"
           echo "Browser-only VSIX: $destination"
-          echo "SHA-256: $digest"
+          echo "SHA-256: $destination_digest"
           {
-            echo "### Browser-only VSIX exported to self-hosted runner"
+            echo "### Browser-only VSIX exported to linked /artifacts volume"
             echo
             echo "- File: `$destination`"
-            echo "- Latest link: `$export_dir/tinymist-web-latest.vsix`"
-            echo "- SHA-256: `$digest`"
+            echo "- Latest link: `/artifacts/tinymist-web-latest.vsix`"
+            echo "- SHA-256: `$destination_digest`"
+            echo
+            echo "Volume mount:"
+            echo
+            echo "```"
+            findmnt --target /artifacts --noheadings --output TARGET,SOURCE,FSTYPE,OPTIONS
+            echo "```"
           } >> "$GITHUB_STEP_SUMMARY"
-          ls -lh "$destination" "$destination.sha256" "$export_dir/tinymist-web-latest.vsix"
+          ls -lh "$destination" "$destination.sha256" /artifacts/tinymist-web-latest.vsix
       - name: Build browser-host integration test bundle
         run: node scripts/build-vscode-web-tests.mjs
       - name: Ensure Chromium and system dependencies are cached

@@ -113,7 +113,7 @@ impl TinymistLanguageServer {
                     })
                 })
                 .into()
-            },
+            }
             // match futures::executor::block_on(fut) {
             //     Ok(t) => lsp_serialize(&t),
             //     Err(err) => lsp_err(err),
