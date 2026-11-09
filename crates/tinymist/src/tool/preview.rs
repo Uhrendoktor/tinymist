@@ -565,9 +565,15 @@ impl PreviewState {
                 let task_id = output_task_id;
                 browser_message_handle.spawn(async move {
                     while let Some(message) = browser_output_rx.recv().await {
+                        log::info!(
+                            "[browser-preview-debug] renderer emitted server frame task={task_id}"
+                        );
                         let params =
                             BrowserPreviewDataMessage::from_ws_message(task_id.clone(), message);
                         client.send_notification::<BrowserPreviewServerMessage>(&params);
+                        log::info!(
+                            "[browser-preview-debug] sent server frame notification task={task_id}"
+                        );
                     }
                 });
             }
@@ -897,10 +903,11 @@ impl futures::Stream for BrowserPreviewDataPlane {
     type Item = Result<WsMessage, reflexo_typst::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.get_mut()
-            .incoming
-            .poll_recv(cx)
-            .map(|message| message.map(Ok))
+        let result = self.get_mut().incoming.poll_recv(cx);
+        if matches!(result, Poll::Ready(Some(_))) {
+            log::info!("[browser-preview-debug] preview data plane received client frame");
+        }
+        result.map(|message| message.map(Ok))
     }
 }
 
@@ -913,6 +920,7 @@ impl futures::Sink<WsMessage> for BrowserPreviewDataPlane {
     }
 
     fn start_send(self: Pin<&mut Self>, item: WsMessage) -> Result<(), Self::Error> {
+        log::info!("[browser-preview-debug] preview data plane queued server frame");
         self.get_mut()
             .outgoing
             .send(item)
@@ -935,6 +943,9 @@ impl ServerState {
         params: BrowserPreviewDataMessage,
     ) -> LspResult<()> {
         let task_id = params.task_id.clone();
+        log::info!(
+            "[browser-preview-debug] Rust LSP handler received client frame task={task_id}"
+        );
         let message = params.into_ws_message().map_err(invalid_params)?;
         self.preview.browser_message(task_id, message)
     }

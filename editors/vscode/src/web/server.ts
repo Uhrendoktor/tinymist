@@ -128,7 +128,12 @@ async function startServer() {
 
     connection.onInitialize((params) => h(bridge.on_request(InitializeRequest.method, params)));
     connection.onRequest((m, p) => h(bridge.on_request(m, p)));
-    connection.onNotification((m, p) => h(bridge.on_notification(m, p)));
+    connection.onNotification((m, p) => {
+      if (m === "tinymist/preview/clientMessage") {
+        console.log("[browser-preview-debug] worker received client frame", (p as any)?.taskId, (p as any)?.kind);
+      }
+      h(bridge.on_notification(m, p));
+    });
 
     reportStartup("language server ready");
     connection.sendNotification("serverWorkerReady");
@@ -137,8 +142,13 @@ async function startServer() {
 
     // A browser worker has no native Tokio executor thread. Keep its
     // current-thread runtime progressing between LSP and Webview messages.
+    let runtimePumpCount = 0;
     setInterval(() => {
       (bridge as any).poll_runtime();
+      runtimePumpCount += 1;
+      if (runtimePumpCount === 1 || runtimePumpCount === 60) {
+        console.log("[browser-preview-debug] runtime pump tick", runtimePumpCount);
+      }
     }, 16);
   } catch (error) {
     reportStartupError(stage, error);

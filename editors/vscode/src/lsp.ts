@@ -622,6 +622,11 @@ export class LanguageState {
       if (!message || typeof message.taskId !== "string") {
         return;
       }
+      console.log(
+        "[browser-preview-debug] extension host received server frame",
+        message.taskId,
+        message.kind,
+      );
       const listener = this.browserPreviewListeners.get(message.taskId);
       if (listener) {
         listener(message);
@@ -746,6 +751,12 @@ export class LanguageState {
       console.warn("Dropping browser preview frame because the language client is stopped");
       return;
     }
+    console.log(
+      "[browser-preview-debug] extension host sending client frame",
+      message.taskId,
+      message.kind,
+      message.data.length,
+    );
     this.client.sendNotification("tinymist/preview/clientMessage", message);
   }
 

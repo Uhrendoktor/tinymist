@@ -102,6 +102,11 @@ export async function createBrowserLanguageClient(
   /// To this time, we start to allow vscode to receive messages from the worker.
   const client = new LanguageClient("tinymist", NAME, clientOptions, worker);
   /// Sets up the output channel for the client
-  client.onNotification("tmLog", ({ data }) => clientOptions.outputChannel?.append(data));
+  client.onNotification("tmLog", ({ data }) => {
+    clientOptions.outputChannel?.append(data);
+    if (typeof data === "string" && data.includes("[browser-preview-debug]")) {
+      console.log(data);
+    }
+  });
   return client;
 }

@@ -60,6 +60,10 @@ impl PreviewActor {
         while let Some(req) = self.preview_rx.recv().await {
             match req {
                 PreviewRequest::Started(tab) => {
+                    log::info!(
+                        "[browser-preview-debug] actor registered preview tab task={}",
+                        tab.task_id
+                    );
                     self.tabs.insert(tab.task_id.clone(), tab);
                 }
                 PreviewRequest::Kill(task_id, tx) => {
@@ -82,16 +86,28 @@ impl PreviewActor {
                 }
                 #[cfg(feature = "preview-web")]
                 PreviewRequest::BrowserMessage(task_id, message) => {
+                    log::info!(
+                        "[browser-preview-debug] actor received client frame task={task_id}"
+                    );
                     if let Some(input) = self
                         .tabs
                         .get(&task_id)
                         .and_then(|tab| tab.browser_input.as_ref())
                     {
                         if input.send(message).is_err() {
-                            log::debug!(
-                                "PreviewTask({task_id}): browser client message dropped after close"
+                            log::warn!(
+                                "[browser-preview-debug] actor input channel closed task={task_id}"
+                            );
+                        } else {
+                            log::info!(
+                                "[browser-preview-debug] actor queued client frame task={task_id}"
                             );
                         }
+                    } else {
+                        log::warn!(
+                            "[browser-preview-debug] no registered tab/input for client frame task={task_id}; registered={:?}",
+                            self.tabs.keys().collect::<Vec<_>>()
+                        );
                     }
                 }
             }
