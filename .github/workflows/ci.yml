@@ -429,6 +429,7 @@ jobs:
             --headless=true \
             editors/vscode/e2e-workspaces/book
       - name: Run native Tinymist regression tests on the local runner
+        if: always()
         run: cargo test -p tinymist --features tinymist/system --locked -- --skip=e2e
       - name: Report browser-only VSIX output
         run: |

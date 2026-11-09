@@ -104,7 +104,9 @@ function buildWs() {
 /// A frontend will try to setup a vscode channel if it is running
 /// in vscode.
 function setupVscodeChannel(nextWs) {
-  const vscodeAPI = typeof acquireVsCodeApi !== "undefined" && acquireVsCodeApi();
+  const vscodeAPI =
+    window.__tinymistVscodeApi ??
+    (typeof acquireVsCodeApi !== "undefined" && acquireVsCodeApi());
   if (vscodeAPI?.postMessage) {
     vscodeAPI.postMessage({ type: "started" });
     vscodeAPI.postMessage({

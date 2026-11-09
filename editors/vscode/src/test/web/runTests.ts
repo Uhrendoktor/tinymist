@@ -6,6 +6,8 @@ type PreviewTask = {
   source?: { kind?: string };
   frontendStarted: boolean;
   browserTransportEnabled: boolean;
+  documentReady: boolean;
+  frontendError?: string;
   frontendTaskId?: string;
   framesFromServer: number;
   framesToServer: number;

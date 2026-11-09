@@ -172,6 +172,8 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
         panelActive: t.panel?.active ?? false,
         taskId: t.taskId,
         source: t.previewSource,
+        documentReady: t.browserTelemetry?.documentReady ?? false,
+        frontendError: t.browserTelemetry?.frontendError,
         frontendStarted: t.browserTelemetry?.frontendStarted ?? false,
         browserTransportEnabled: t.browserTelemetry?.browserTransportEnabled ?? false,
         frontendTaskId: t.browserTelemetry?.frontendTaskId,
@@ -334,11 +336,8 @@ interface BrowserPreviewTelemetry {
   frontendTaskId?: string;
   panelVisible?: boolean;
   panelActive?: boolean;
-  htmlLength?: number;
-  htmlHasFrontendReadyMarker?: boolean;
-  htmlHasInjectedState?: boolean;
-  inlineModuleScriptCount?: number;
-  externalScriptCount?: number;
+  documentReady?: boolean;
+  frontendError?: string;
   framesFromServer: number;
   framesToServer: number;
   renderedFrames: number;
@@ -449,6 +448,16 @@ export async function openPreviewInWebView({
     : undefined;
   const browserRequestListener = browserTransport
     ? panel.webview.onDidReceiveMessage((message) => {
+        if (message?.type === "tinymist-preview-document-ready") {
+          if (browserTelemetry) browserTelemetry.documentReady = true;
+          return;
+        }
+        if (message?.type === "tinymist-preview-error") {
+          const error = String(message.message ?? "Unknown Webview error");
+          if (browserTelemetry) browserTelemetry.frontendError = error;
+          console.error("Tinymist preview Webview failed:", error);
+          return;
+        }
         if (message?.type === "tinymist-preview-frontend-ready") {
           if (browserTelemetry) {
             browserTelemetry.frontendStarted = true;
@@ -537,11 +546,6 @@ export async function openPreviewInWebView({
   if (browserTelemetry) {
     browserTelemetry.panelVisible = panel.visible;
     browserTelemetry.panelActive = panel.active;
-    browserTelemetry.htmlLength = html.length;
-    browserTelemetry.htmlHasFrontendReadyMarker = html.includes("tinymist-preview-frontend-ready");
-    browserTelemetry.htmlHasInjectedState = !html.includes("preview-arg:state:");
-    browserTelemetry.inlineModuleScriptCount = (html.match(/<script[^>]*type=["']module["'][^>]*>/g) || []).length;
-    browserTelemetry.externalScriptCount = (html.match(/<script[^>]+src=/g) || []).length;
   }
   // Some browser-host test layouts do not leave a newly created second-column
   // Webview visible. Reveal it explicitly so its scripts and message channel
