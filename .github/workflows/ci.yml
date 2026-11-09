@@ -369,13 +369,40 @@ jobs:
           # /artifacts must be the linked volume requested for this export.
           test -d /artifacts || { echo "::error::The linked /artifacts volume is not mounted."; exit 1; }
           mountpoint -q /artifacts || { echo "::error::/artifacts exists but is not a mount point; refusing to export to ephemeral runner storage."; exit 1; }
-          test -w /artifacts || { echo "::error::The /artifacts volume is not writable by the runner."; exit 1; }
 
-          echo "Export mount:"
+          echo "Export mount and runner identity:"
+          id
+          stat -c 'path=%n mode=%A uid=%u gid=%g owner=%U:%G' /artifacts
           findmnt --target /artifacts --noheadings --output TARGET,SOURCE,FSTYPE,OPTIONS
-          install -m 0644 "$source" "$destination"
-          sha256sum "$destination" > "$destination.sha256"
-          ln -sfn "$(basename "$destination")" /artifacts/tinymist-web-latest.vsix
+          mount_options="$(findmnt --target /artifacts --noheadings --output OPTIONS)"
+          if printf '%s' "$mount_options" | tr ',' '\\n' | grep -Fxq ro; then
+            echo "::error::The linked /artifacts volume is mounted read-only. Remount it read-write on the runner host."
+            exit 1
+          fi
+
+          export_as_root=0
+          if ! test -w /artifacts; then
+            if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+              export_as_root=1
+              echo "Runner user cannot write /artifacts directly; using non-interactive sudo for the export."
+            else
+              echo "::error::The /artifacts volume is writable but not writable by the runner user, and non-interactive sudo is unavailable."
+              exit 1
+            fi
+          fi
+
+          if [ "$export_as_root" -eq 1 ]; then
+            sudo -n sh -c 'probe="$(mktemp /artifacts/.tinymist-write-test.XXXXXX)" && rm -f "$probe"'
+            sudo -n install -m 0644 "$source" "$destination"
+            sudo -n sh -c 'sha256sum "$1" > "$2"' sh "$destination" "$destination.sha256"
+            sudo -n ln -sfn "$(basename "$destination")" /artifacts/tinymist-web-latest.vsix
+          else
+            probe="$(mktemp /artifacts/.tinymist-write-test.XXXXXX)"
+            rm -f "$probe"
+            install -m 0644 "$source" "$destination"
+            sha256sum "$destination" > "$destination.sha256"
+            ln -sfn "$(basename "$destination")" /artifacts/tinymist-web-latest.vsix
+          fi
 
           source_digest="$(sha256sum "$source" | cut -d ' ' -f 1)"
           destination_digest="$(sha256sum "$destination" | cut -d ' ' -f 1)"
