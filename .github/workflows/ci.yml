@@ -383,7 +383,32 @@ jobs:
       - name: Run native Tinymist regression tests on the local runner
         if: always()
         run: cargo test -p tinymist --no-default-features --features tinymist/system,tinymist/preview,tinymist/no-content-hint --locked -- --skip=e2e
-      - name: Report browser-only VSIX output
+      - name: Export browser-only VSIX to persistent runner folder
         run: |
-          ls -lh dist/tinymist-web-*.vsix
-          echo "Browser-only VSIX passed package verification on the persistent self-hosted runner."
+          set -euo pipefail
+          version="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync("editors/vscode/package.json", "utf8")).version)')"
+          source="dist/tinymist-web-${version}.vsix"
+          test -s "$source"
+
+          # Keep the VSIX outside the checked-out repository so checkout/clean
+          # operations cannot remove it. Override this with TINYMIST_EXPORT_DIR
+          # in the self-hosted runner environment if a different mounted folder
+          # should be used.
+          export_dir="${TINYMIST_EXPORT_DIR:-$HOME/tinymist-exports}"
+          mkdir -p "$export_dir"
+          destination="$export_dir/$(basename "$source")"
+          install -m 0644 "$source" "$destination"
+          sha256sum "$destination" > "$destination.sha256"
+          ln -sfn "$(basename "$destination")" "$export_dir/tinymist-web-latest.vsix"
+
+          digest="$(sha256sum "$destination" | cut -d ' ' -f 1)"
+          echo "Browser-only VSIX: $destination"
+          echo "SHA-256: $digest"
+          {
+            echo "### Browser-only VSIX exported to self-hosted runner"
+            echo
+            echo "- File: `$destination`"
+            echo "- Latest link: `$export_dir/tinymist-web-latest.vsix`"
+            echo "- SHA-256: `$digest`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          ls -lh "$destination" "$destination.sha256" "$export_dir/tinymist-web-latest.vsix"
