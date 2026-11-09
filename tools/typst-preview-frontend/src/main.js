@@ -107,6 +107,11 @@ function setupVscodeChannel(nextWs) {
   const vscodeAPI = typeof acquireVsCodeApi !== "undefined" && acquireVsCodeApi();
   if (vscodeAPI?.postMessage) {
     vscodeAPI.postMessage({ type: "started" });
+    vscodeAPI.postMessage({
+      type: "tinymist-preview-frontend-ready",
+      taskId: window.vscode_state?.taskId,
+      browserTransport: window.vscode_state?.browserTransport === true,
+    });
     // Native VS Code previews continue to use their real WebSocket endpoint.
     // Only the browser-only WASM extension opts into the Webview message bridge.
     if (window.vscode_state?.browserTransport === true) {

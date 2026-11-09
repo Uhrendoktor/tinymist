@@ -5,6 +5,8 @@ type PreviewTask = {
   panel: boolean;
   source?: { kind?: string };
   frontendStarted: boolean;
+  browserTransportEnabled: boolean;
+  frontendTaskId?: string;
   framesFromServer: number;
   framesToServer: number;
   renderedFrames: number;

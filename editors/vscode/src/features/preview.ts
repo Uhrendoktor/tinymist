@@ -171,6 +171,8 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
         taskId: t.taskId,
         source: t.previewSource,
         frontendStarted: t.browserTelemetry?.frontendStarted ?? false,
+        browserTransportEnabled: t.browserTelemetry?.browserTransportEnabled ?? false,
+        frontendTaskId: t.browserTelemetry?.frontendTaskId,
         framesFromServer: t.browserTelemetry?.framesFromServer ?? 0,
         framesToServer: t.browserTelemetry?.framesToServer ?? 0,
         renderedFrames: t.browserTelemetry?.renderedFrames ?? 0,
@@ -326,6 +328,8 @@ function getPreviewConfCompat<T>(s: string) {
  */
 interface BrowserPreviewTelemetry {
   frontendStarted: boolean;
+  browserTransportEnabled?: boolean;
+  frontendTaskId?: string;
   framesFromServer: number;
   framesToServer: number;
   renderedFrames: number;
@@ -436,6 +440,15 @@ export async function openPreviewInWebView({
     : undefined;
   const browserRequestListener = browserTransport
     ? panel.webview.onDidReceiveMessage((message) => {
+        if (message?.type === "tinymist-preview-frontend-ready") {
+          if (browserTelemetry) {
+            browserTelemetry.frontendStarted = true;
+            browserTelemetry.browserTransportEnabled = message.browserTransport === true;
+            browserTelemetry.frontendTaskId =
+              typeof message.taskId === "string" ? message.taskId : undefined;
+          }
+          return;
+        }
         if (message?.taskId !== taskId) {
           return;
         }
@@ -562,7 +575,14 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
 
   const taskId = Math.random().toString(36).substring(7);
   const browserTelemetry: BrowserPreviewTelemetry | undefined = browserTransport
-    ? { frontendStarted: false, framesFromServer: 0, framesToServer: 0, renderedFrames: 0 }
+    ? {
+        frontendStarted: false,
+        browserTransportEnabled: false,
+        frontendTaskId: undefined,
+        framesFromServer: 0,
+        framesToServer: 0,
+        renderedFrames: 0,
+      }
     : undefined;
   const filePath = bindDocument.uri.fsPath;
 
