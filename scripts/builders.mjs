@@ -108,7 +108,11 @@ export async function buildPreview() {
 
   const builtHtmlPath = path.resolve(previewDir, "dist/index.html");
   const builtHtml = await fs.readFile(builtHtmlPath, "utf8");
-  for (const marker of ["tinymist-preview-frame", "browserTransport"]) {
+  for (const marker of [
+    "tinymist-preview-frame",
+    "browserTransport",
+    "tinymist-preview-document-ready",
+  ]) {
     if (!builtHtml.includes(marker)) {
       throw new Error(
         `Bundled preview HTML is missing browser transport marker: ${marker}`,
@@ -250,9 +254,17 @@ export async function installVscode(kind) {
 }
 
 export async function buildWebLspBinaryBase() {
+  // The published tinymist-assets crate contains a placeholder preview page.
+  // Build the browser binary against the local crate populated by buildPreview.
+  // Keep this override scoped to the WASM build so generic cargo installs and
+  // native-only builds continue using the published assets crate.
+  const localAssetsPath = path.resolve(cwd, "crates/tinymist-assets").replace(/\\/g, "/");
+  const localAssetsPatch = `patch.crates-io.tinymist-assets.path=${JSON.stringify(localAssetsPath)}`;
+  const cargoConfigArg = `'${localAssetsPatch.replace(/'/g, "'\\''")}'`;
+
   await spawnAsync(
     "lsp:web",
-    "cd crates/tinymist && wasm-pack build --target web -- --no-default-features --features web,preview-web,export,no-content-hint",
+    `cd crates/tinymist && wasm-pack build --target web -- --config ${cargoConfigArg} --no-default-features --features web,preview-web,export,no-content-hint`,
     {
       cwd,
       env: {
