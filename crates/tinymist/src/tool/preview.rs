@@ -258,6 +258,39 @@ impl PreviewCliArgs {
     }
 }
 
+/// Checks whether a preview entry path is absolute on the current host.
+///
+/// Rust path semantics on wasm32-unknown-unknown do not reliably classify
+/// VS Code Web workspace paths. The browser client supplies rooted POSIX
+/// paths such as /workspace/document.typ, so validate that contract directly
+/// while keeping native path validation unchanged.
+fn is_absolute_preview_entry(path: &Path) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        path.to_str().is_some_and(is_rooted_browser_path)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        path.is_absolute()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn is_rooted_browser_path(path: &str) -> bool {
+    path.starts_with('/')
+}
+
+#[cfg(test)]
+mod path_tests {
+    #[test]
+    fn browser_entry_paths_are_rooted_posix_paths() {
+        assert!(super::is_rooted_browser_path("/tinymist-browser-preview.typ"));
+        assert!(super::is_rooted_browser_path("/workspace/document.typ"));
+        assert!(!super::is_rooted_browser_path("tinymist-browser-preview.typ"));
+        assert!(!super::is_rooted_browser_path("./document.typ"));
+    }
+}
+
 /// Response for starting a preview instance.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -323,7 +356,7 @@ impl ServerState {
         let entry = entry
             .map(|input| {
                 let input = Path::new(&input);
-                if !input.is_absolute() {
+                if !is_absolute_preview_entry(input) {
                     // std::env::current_dir().unwrap().join(input)
                     return Err(invalid_params("entry file must be absolute path"));
                 };
