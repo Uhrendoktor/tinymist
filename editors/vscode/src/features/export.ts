@@ -351,7 +351,10 @@ function workspaceUriForExportPath(sourceUri: vscode.Uri, serverPath: string): v
   }
 
   const isWithinFolder = (candidate: string, folderPath: string) => {
-    const root = folderPath.replace(/\\/+$/, "") || "/";
+    let root = folderPath || "/";
+    while (root.length > 1 && root.endsWith("/")) {
+      root = root.slice(0, -1);
+    }
     return candidate === root || candidate.startsWith(root === "/" ? "/" : `${root}/`);
   };
 

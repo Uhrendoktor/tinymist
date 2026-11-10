@@ -119,8 +119,12 @@ function setupVscodeChannel(nextWs) {
     if (window.vscode_state?.browserTransport === true) {
       const taskId = window.vscode_state.taskId;
       vscodeAPI.postMessage({ type: "tinymist-preview-started", taskId });
-      window.addEventListener("tinymist-preview-rendered", () => {
-        vscodeAPI.postMessage({ type: "tinymist-preview-rendered", taskId });
+      window.addEventListener("tinymist-preview-rendered", (event) => {
+        vscodeAPI.postMessage({
+          type: "tinymist-preview-rendered",
+          taskId,
+          metrics: event.detail,
+        });
       });
       installVscodeWebSocket(vscodeAPI);
     }

@@ -486,7 +486,51 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
         throw error;
       }
       if ((window as any).vscode_state?.browserTransport === true) {
-        window.dispatchEvent(new Event("tinymist-preview-rendered"));
+        const app = document.getElementById("typst-app");
+        const appRect = app?.getBoundingClientRect();
+        const svgs = Array.from(app?.querySelectorAll("svg") ?? []);
+        const visibleSvgs = svgs.filter((svg) => {
+          const rect = svg.getBoundingClientRect();
+          const style = getComputedStyle(svg);
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            Number(style.opacity) > 0
+          );
+        });
+        const contentElements = Array.from(
+          app?.querySelectorAll(
+            "svg path, svg text, svg image, svg use, svg rect, svg circle, svg line, svg polygon, svg polyline, svg foreignObject",
+          ) ?? [],
+        );
+        const visibleContentElements = contentElements.filter((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return (
+            (rect.width > 0 || rect.height > 0) &&
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            Number(style.opacity) > 0
+          );
+        });
+        const firstSvgRect = visibleSvgs[0]?.getBoundingClientRect();
+        window.dispatchEvent(
+          new CustomEvent("tinymist-preview-rendered", {
+            detail: {
+              appWidth: appRect?.width ?? 0,
+              appHeight: appRect?.height ?? 0,
+              svgCount: svgs.length,
+              visibleSvgCount: visibleSvgs.length,
+              svgWidth: firstSvgRect?.width ?? 0,
+              svgHeight: firstSvgRect?.height ?? 0,
+              contentElementCount: contentElements.length,
+              visibleContentElementCount: visibleContentElements.length,
+              markupLength: app?.innerHTML.length ?? 0,
+            },
+          }),
+        );
       }
     }
 

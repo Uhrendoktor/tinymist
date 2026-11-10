@@ -21,6 +21,17 @@ type PreviewTask = {
   framesFromServer: number;
   framesToServer: number;
   renderedFrames: number;
+  renderMetrics?: {
+    appWidth: number;
+    appHeight: number;
+    svgCount: number;
+    visibleSvgCount: number;
+    svgWidth: number;
+    svgHeight: number;
+    contentElementCount: number;
+    visibleContentElementCount: number;
+    markupLength: number;
+  };
 };
 
 type PreviewState = {
@@ -217,13 +228,34 @@ export async function run(): Promise<void> {
     bootstrapTask.bootstrapBrowserTransport,
     `Preview Webview bootstrap did not receive browserTransport=true: ${JSON.stringify(bootstrapTask)}`,
   );
-  await waitForTask(firstTaskId, (task) =>
+  const renderedTask = await waitForTask(firstTaskId, (task) =>
     task.frontendStarted &&
     task.browserTransportEnabled &&
     task.webviewSocketReady &&
     task.framesFromServer > 0 &&
     task.framesToServer > 0 &&
-    task.renderedFrames > 0,
+    task.renderedFrames > 0 &&
+    !!task.renderMetrics,
+  );
+  const renderMetrics = renderedTask.renderMetrics!;
+  console.log("Browser preview DOM render metrics:", JSON.stringify(renderMetrics));
+  assert(
+    renderMetrics.appWidth > 0 && renderMetrics.appHeight > 0,
+    `Preview app has no visible layout box: ${JSON.stringify(renderMetrics)}`,
+  );
+  assert(
+    renderMetrics.svgCount > 0 && renderMetrics.visibleSvgCount > 0,
+    `Preview did not create a visible SVG page: ${JSON.stringify(renderMetrics)}`,
+  );
+  assert(
+    renderMetrics.svgWidth > 0 && renderMetrics.svgHeight > 0,
+    `Rendered SVG has empty bounds: ${JSON.stringify(renderMetrics)}`,
+  );
+  assert(
+    renderMetrics.contentElementCount > 0 &&
+      renderMetrics.visibleContentElementCount > 0 &&
+      renderMetrics.markupLength > 0,
+    `Rendered SVG contains no visible page content: ${JSON.stringify(renderMetrics)}`,
   );
 
   await waitFor("Typst preview outline", async () => {
@@ -238,6 +270,31 @@ export async function run(): Promise<void> {
   assert(
     compileErrors.length === 0,
     `Dependency-free browser preview source must compile: ${JSON.stringify(compileErrors.map((item) => item.message))}`,
+  );
+
+  // Exercise a real browser export and read the result back through the
+  // originating workspace provider. This catches URI-scheme loss that an
+  // in-memory LSP response alone cannot detect.
+  await vscode.window.showTextDocument(firstDocument);
+  const pdfExport = (await vscode.commands.executeCommand(
+    "tinymist.exportCurrentPdf",
+  )) as { path: string | null; data: string | null } | null;
+  assert(
+    pdfExport && typeof pdfExport.path === "string" && pdfExport.path,
+    `Browser PDF export returned no persisted path: ${JSON.stringify(pdfExport)}`,
+  );
+  const exportedPdfUri = firstDocument.uri.with({
+    path: pdfExport.path,
+    query: "",
+    fragment: "",
+  });
+  const exportedPdf = await vscode.workspace.fs.readFile(exportedPdfUri);
+  assert(
+    new TextDecoder().decode(exportedPdf.subarray(0, 5)) === "%PDF-",
+    `Browser PDF export did not write a valid PDF at ${exportedPdfUri.toString()}`,
+  );
+  console.log(
+    `Browser PDF export read-back passed: ${exportedPdfUri.toString()} (${exportedPdf.length} bytes)`,
   );
 
   // Exercise the source-to-preview scroll command through the Web Worker LSP client.
@@ -286,8 +343,16 @@ export async function run(): Promise<void> {
 
   try {
     await waitForTask(secondTaskId, (task) => task.panel);
-    await waitForTask(secondTaskId, (task) =>
-      task.frontendStarted && task.framesFromServer > 0 && task.renderedFrames > 0,
+    const secondRenderedTask = await waitForTask(secondTaskId, (task) =>
+      task.frontendStarted &&
+      task.framesFromServer > 0 &&
+      task.renderedFrames > 0 &&
+      !!task.renderMetrics,
+    );
+    assert(
+      secondRenderedTask.renderMetrics!.visibleSvgCount > 0 &&
+        secondRenderedTask.renderMetrics!.visibleContentElementCount > 0,
+      `Second preview rendered no visible page content: ${JSON.stringify(secondRenderedTask.renderMetrics)}`,
     );
 
     await waitFor("two isolated browser preview tasks", async () => {

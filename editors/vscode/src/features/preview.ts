@@ -197,6 +197,7 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
         framesFromServer: t.browserTelemetry?.framesFromServer ?? 0,
         framesToServer: t.browserTelemetry?.framesToServer ?? 0,
         renderedFrames: t.browserTelemetry?.renderedFrames ?? 0,
+        renderMetrics: t.browserTelemetry?.renderMetrics,
       }));
       return {
         tasks,
@@ -367,6 +368,18 @@ function getPreviewConfCompat<T>(s: string) {
 /**
  * The arguments for launching the preview in a builtin vscode webview.
  */
+interface BrowserPreviewRenderMetrics {
+  appWidth: number;
+  appHeight: number;
+  svgCount: number;
+  visibleSvgCount: number;
+  svgWidth: number;
+  svgHeight: number;
+  contentElementCount: number;
+  visibleContentElementCount: number;
+  markupLength: number;
+}
+
 interface BrowserPreviewTelemetry {
   frontendStarted: boolean;
   browserTransportEnabled?: boolean;
@@ -387,6 +400,7 @@ interface BrowserPreviewTelemetry {
   framesFromServer: number;
   framesToServer: number;
   renderedFrames: number;
+  renderMetrics?: BrowserPreviewRenderMetrics;
 }
 
 interface OpenPreviewInWebViewArgs {
@@ -583,6 +597,9 @@ export async function openPreviewInWebView({
         if (message.type === "tinymist-preview-rendered") {
           if (browserTelemetry) {
             browserTelemetry.renderedFrames += 1;
+            if (message.metrics && typeof message.metrics === "object") {
+              browserTelemetry.renderMetrics = message.metrics as BrowserPreviewRenderMetrics;
+            }
           }
           return;
         }
