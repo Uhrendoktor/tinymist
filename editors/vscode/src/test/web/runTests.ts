@@ -31,11 +31,13 @@ type PreviewTask = {
     contentElementCount: number;
     visibleContentElementCount: number;
     markupLength: number;
-    rasterWidth: number;
-    rasterHeight: number;
-    nonWhitePixelCount: number;
-    opaquePixelCount: number;
-    rasterError?: string;
+    renderRootTag: string;
+    renderMode: string;
+    renderRootWidth: number;
+    renderRootHeight: number;
+    nonWhitePaintElementCount: number;
+    paintSamples: string[];
+    renderError?: string;
   };
 };
 
@@ -264,13 +266,14 @@ export async function run(): Promise<void> {
     `Rendered SVG contains no visible page content: ${JSON.stringify(renderMetrics)}`,
   );
   assert(
-    !renderMetrics.rasterError &&
-      renderMetrics.rasterWidth > 0 &&
-      renderMetrics.rasterHeight > 0 &&
-      renderMetrics.opaquePixelCount > 0 &&
-      renderMetrics.nonWhitePixelCount > 0,
-    `Preview SVG painted no non-white pixels: ${JSON.stringify(renderMetrics)}`,
+    !renderMetrics.renderError &&
+      renderMetrics.renderRootTag === "svg" &&
+      renderMetrics.renderRootWidth > 0 &&
+      renderMetrics.renderRootHeight > 0 &&
+      renderMetrics.nonWhitePaintElementCount > 0,
+    `Preview SVG contains no non-white painted geometry after render completion: ${JSON.stringify(renderMetrics)}`,
   );
+  console.log("Browser preview non-white paint samples:", JSON.stringify(renderMetrics.paintSamples));
 
   await waitFor("Typst preview outline", async () => {
     const state = await inspectPreviewState();
@@ -373,7 +376,7 @@ export async function run(): Promise<void> {
     assert(
       secondRenderedTask.renderMetrics!.visibleSvgCount > 0 &&
         secondRenderedTask.renderMetrics!.visibleContentElementCount > 0 &&
-        secondRenderedTask.renderMetrics!.nonWhitePixelCount > 0,
+        secondRenderedTask.renderMetrics!.nonWhitePaintElementCount > 0,
       `Second preview rendered no visible painted page content: ${JSON.stringify(secondRenderedTask.renderMetrics)}`,
     );
 
