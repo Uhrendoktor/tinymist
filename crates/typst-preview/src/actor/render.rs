@@ -122,11 +122,33 @@ impl RenderActor {
             // otherwise, we render the incremental changes for only once
             let has_full_render = has_full_render;
             log::debug!("RenderActor: has_full_render: {has_full_render}");
-            let Some(document) = self.view.read().as_ref().and_then(|view| view.doc()) else {
+            log::info!("[browser-preview-debug] RenderActor acquiring CompileView read lock");
+            let document = {
+                let view_guard = self.view.read();
+                log::info!(
+                    "[browser-preview-debug] RenderActor acquired CompileView read lock has_view={}",
+                    view_guard.is_some()
+                );
+                let Some(view) = view_guard.as_ref() else {
+                    log::info!("RenderActor: CompileView is not ready");
+                    continue;
+                };
+                let document = view.doc();
+                log::info!(
+                    "[browser-preview-debug] RenderActor document lookup ready={}",
+                    document.is_some()
+                );
+                document
+            };
+            let Some(document) = document else {
                 log::info!("RenderActor: document is not ready");
                 continue;
             };
 
+            log::info!(
+                "[browser-preview-debug] RenderActor starting render full={}",
+                has_full_render
+            );
             let data = self.render(has_full_render, &document);
             log::info!(
                 "[browser-preview-debug] RenderActor produced frame bytes={}",
@@ -151,9 +173,20 @@ impl RenderActor {
     #[typst_macros::time]
     fn render_full(&mut self, document: &TypstDocument) -> Vec<u8> {
         let mut renderer = Self::new_renderer();
+        log::info!("[browser-preview-debug] RenderActor starting full-document pack_delta");
         let delta = renderer.pack_delta(document);
+        log::info!(
+            "[browser-preview-debug] RenderActor finished pack_delta bytes={}",
+            delta.len()
+        );
         self.renderer = renderer;
-        match protocol::full_current_frame_from_delta(&delta) {
+        log::info!("[browser-preview-debug] RenderActor converting delta to full-current frame");
+        let frame = protocol::full_current_frame_from_delta(&delta);
+        log::info!(
+            "[browser-preview-debug] RenderActor full-current conversion complete has_frame={}",
+            frame.is_some()
+        );
+        match frame {
             Some(frame) => frame,
             None => {
                 log::warn!("fresh preview renderer did not produce a diff-v1 frame");
