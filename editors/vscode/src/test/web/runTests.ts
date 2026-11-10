@@ -39,6 +39,9 @@ type PreviewTask = {
     nonWhitePaintElementCount: number;
     darkPaintElementCount: number;
     bluePaintElementCount: number;
+    paintedGlyphElementCount: number;
+    darkTextGlyphElementCount: number;
+    blueTextGlyphElementCount: number;
     paintSamples: string[];
     renderError?: string;
   };
@@ -454,9 +457,10 @@ export async function run(): Promise<void> {
       secondRenderedTask.renderMetrics!.visibleSvgCount > 0 &&
         secondRenderedTask.renderMetrics!.visibleContentElementCount > 0 &&
         secondRenderedTask.renderMetrics!.pageCount >= 2 &&
-        secondRenderedTask.renderMetrics!.bluePaintElementCount > 0 &&
-        secondRenderedTask.renderMetrics!.darkPaintElementCount > 0,
-      `Exact user fixture is missing blue text, default dark text, or its second page: ${JSON.stringify(secondRenderedTask.renderMetrics)}`,
+        secondRenderedTask.renderMetrics!.paintedGlyphElementCount > 0 &&
+        secondRenderedTask.renderMetrics!.blueTextGlyphElementCount > 0 &&
+        secondRenderedTask.renderMetrics!.darkTextGlyphElementCount > 0,
+      `Exact user fixture is missing painted glyphs, blue text, default dark text, or its second page: ${JSON.stringify(secondRenderedTask.renderMetrics)}`,
     );
 
     await waitFor("two isolated browser preview tasks", async () => {
