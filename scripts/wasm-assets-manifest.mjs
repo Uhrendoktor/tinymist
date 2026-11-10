@@ -10,8 +10,9 @@ let tomlReady;
  * consumed by the existing WASM asset packager.
  *
  * The [dependencies] declarations use Cargo's real package/version syntax.
- * Typst-specific namespace, URL and redistribution details stay under
+ * Typst-specific namespace and exceptional license overrides stay under
  * [package.metadata.tinymist], so they are not invalid Cargo dependency keys.
+ * Package licenses are normally discovered from each downloaded typst.toml.
  */
 export function normalizeTomlAssetManifest(document) {
   assert.ok(document && typeof document === "object", "TOML manifest must be a table");
@@ -65,6 +66,7 @@ export function normalizeTomlAssetManifest(document) {
       name: packageName,
       version: versionRequirement.slice(1),
       license: metadata.license,
+      licenseFile: metadata.license_file ?? metadata["license-file"],
       licenseUrl: metadata.license_url ?? metadata["license-url"],
     };
     if (metadata.url !== undefined) item.url = metadata.url;
@@ -107,6 +109,12 @@ export function normalizeTomlAssetManifest(document) {
   };
 }
 
+export async function parseTomlDocument(source) {
+  tomlReady ??= initTomlEdit();
+  await tomlReady;
+  return parseToml(source);
+}
+
 export async function parseAssetManifestText(source, extension) {
   if (extension.toLowerCase() === ".json") {
     return JSON.parse(source);
@@ -116,9 +124,7 @@ export async function parseAssetManifestText(source, extension) {
     ".toml",
     "asset manifests must use .toml (Cargo-style) or .json format",
   );
-  tomlReady ??= initTomlEdit();
-  await tomlReady;
-  return normalizeTomlAssetManifest(parseToml(source));
+  return normalizeTomlAssetManifest(await parseTomlDocument(source));
 }
 
 export async function readAssetManifest(manifestPath) {
