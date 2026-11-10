@@ -120,9 +120,9 @@ node scripts/build-browser.mjs
 Or build your custom manifest and choose the VSIX output path:
 
 ```sh
-node scripts/build-browser.mjs \\
-  --manifest "$PWD/my-wasm-assets.toml" \\
-  --output "$PWD/dist/tinymist-web-custom.vsix" \\
+node scripts/build-browser.mjs \
+  --manifest "$PWD/my-wasm-assets.toml" \
+  --output "$PWD/dist/tinymist-web-custom.vsix" \
   --update-lock
 ```
 
