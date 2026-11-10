@@ -6,13 +6,27 @@ import path from "node:path";
 
 import {
   comparePackageVersions,
+  selectLatestTypstPackageVersion,
   copyPackageDirectory,
+  checkoutGitPackage,
 } from "./wasm-package-source.mjs";
 
 test("compares Typst package versions numerically", () => {
   assert.ok(comparePackageVersions("0.10.0", "0.9.9") > 0);
   assert.equal(comparePackageVersions("1.2.3", "1.2.3"), 0);
   assert.ok(comparePackageVersions("1.2.2", "1.2.3") < 0);
+});
+
+test("selects the highest published version from the Typst package index", () => {
+  const index = [
+    { name: "cetz", version: "0.9.9" },
+    { name: "other", version: "9.9.9" },
+    { name: "cetz", version: "0.10.0" },
+    { name: "cetz", version: "0.10.0" },
+    { name: "cetz", version: "nightly" },
+  ];
+  assert.equal(selectLatestTypstPackageVersion(index, "cetz"), "0.10.0");
+  assert.throws(() => selectLatestTypstPackageVersion(index, "missing"), /no published versions/);
 });
 
 test("copies local package files and calculates a stable content digest", async () => {
@@ -46,5 +60,38 @@ test("rejects symbolic links in local package directories", async () => {
   await fs.writeFile(path.join(root, "outside.typ"), "#let unsafe = true");
   await fs.symlink(path.join(root, "outside.typ"), path.join(source, "linked.typ"));
   await assert.rejects(copyPackageDirectory(source, destination), /symbolic link/);
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test("checks out a selected Git branch and pinned commit", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "tinymist-git-package-"));
+  const repository = path.join(root, "repository");
+  await fs.mkdir(path.join(repository, "packages", "demo"), { recursive: true });
+  const runGit = (args, cwd = repository) => {
+    const { execFileSync } = await import("node:child_process");
+    return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  };
+  const { execFileSync } = await import("node:child_process");
+  execFileSync("git", ["init", "-q", "-b", "main", repository]);
+  execFileSync("git", ["config", "user.name", "Tinymist Tests"], { cwd: repository });
+  execFileSync("git", ["config", "user.email", "tests@example.invalid"], { cwd: repository });
+  await fs.writeFile(path.join(repository, "packages", "demo", "typst.toml"), '[package]\\nname = "demo"\\nversion = "1.2.3"\\n');
+  execFileSync("git", ["add", "."], { cwd: repository });
+  execFileSync("git", ["commit", "-q", "-m", "fixture"], { cwd: repository });
+  const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repository, encoding: "utf8" }).trim();
+
+  const source = {
+    git: repository,
+    refType: "branch",
+    ref: "main",
+    subdirectory: "packages/demo",
+  };
+  const first = await checkoutGitPackage(source, undefined, path.join(root, "first"));
+  assert.equal(first.commit, commit);
+  assert.equal(await fs.readFile(path.join(first.packageDirectory, "typst.toml"), "utf8"),
+    '[package]\\nname = "demo"\\nversion = "1.2.3"\\n');
+
+  const second = await checkoutGitPackage(source, commit, path.join(root, "second"));
+  assert.equal(second.commit, commit);
   await fs.rm(root, { recursive: true, force: true });
 });
