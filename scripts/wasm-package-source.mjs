@@ -48,6 +48,8 @@ export async function fetchLatestTypstPackageVersion(name, namespace = "preview"
  * metadata. The digest is independent of mtimes and directory traversal order.
  */
 export async function copyPackageDirectory(sourceDirectory, destinationDirectory) {
+  const sourceStat = await fs.lstat(sourceDirectory);
+  assert.ok(!sourceStat.isSymbolicLink() && sourceStat.isDirectory(), "package source root must be a real directory");
   const source = await fs.realpath(sourceDirectory);
   await fs.mkdir(destinationDirectory, { recursive: true });
 
@@ -123,5 +125,7 @@ export async function checkoutGitPackage(source, requestedCommit, destinationDir
     packageDirectory === repositoryDirectory || packageDirectory.startsWith(repositoryDirectory + path.sep),
     "Git package subdirectory escapes the repository",
   );
+  const packageStat = await fs.lstat(packageDirectory);
+  assert.ok(!packageStat.isSymbolicLink() && packageStat.isDirectory(), "Git package subdirectory must be a real directory");
   return { repositoryDirectory, packageDirectory, commit };
 }
