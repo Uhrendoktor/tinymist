@@ -508,16 +508,61 @@ export class LanguageState {
     const hasRead = new Map<string, [number, FileResult | undefined]>();
     let watchClock = 0;
 
-    const tryRead = async (uri: vscode.Uri) =>
-      vscode.workspace.fs.readFile(uri).then(
+    // The WASM VFS represents files with canonical file: URIs, but a browser
+    // workspace may be backed by another VS Code FileSystemProvider (for
+    // example vscode-test-web: or vscode-vfs:). Keep the server-side URI as
+    // the identity sent over LSP, and translate it only at the VS Code fs API
+    // boundary where the registered provider's scheme is required.
+    const isWithinWorkspaceFolder = (uriPath: string, folderPath: string) => {
+      const root = folderPath.replace(/\\/+$/, "") || "/";
+      return uriPath === root || uriPath.startsWith(root === "/" ? "/" : `${root}/`);
+    };
+
+    const workspaceUriForServerUri = (uri: vscode.Uri): vscode.Uri => {
+      if (uri.scheme !== "file") {
+        return uri;
+      }
+
+      const folder = (vscode.workspace.workspaceFolders ?? [])
+        .filter(
+          ({ uri: folderUri }) =>
+            folderUri.scheme !== "file" &&
+            isWithinWorkspaceFolder(uri.path, folderUri.path),
+        )
+        .sort((left, right) => right.uri.path.length - left.uri.path.length)[0];
+
+      return folder ? folder.uri.with({ path: uri.path }) : uri;
+    };
+
+    const serverUriForWorkspaceUri = (uri: vscode.Uri): vscode.Uri => {
+      if (uri.scheme === "file") {
+        return uri;
+      }
+
+      const folder = (vscode.workspace.workspaceFolders ?? [])
+        .filter(
+          ({ uri: folderUri }) =>
+            folderUri.scheme === uri.scheme &&
+            folderUri.authority === uri.authority &&
+            isWithinWorkspaceFolder(uri.path, folderUri.path),
+        )
+        .sort((left, right) => right.uri.path.length - left.uri.path.length)[0];
+
+      return folder ? uri.with({ scheme: "file", authority: "", query: "", fragment: "" }) : uri;
+    };
+
+    const tryRead = async (uri: vscode.Uri) => {
+      const workspaceUri = workspaceUriForServerUri(uri);
+      return vscode.workspace.fs.readFile(workspaceUri).then(
         (data): FileResult => {
           return { type: "ok", content: bytesBase64Encode(data) } as const;
         },
         (err: any): FileResult => {
-          console.error("Failed to read file", uri, err);
+          console.error("Failed to read file", uri, "via workspace URI", workspaceUri, err);
           return { type: "err", error: err.message as string } as const;
         },
       );
+    };
 
     const registerHasRead = (uri: string, currentClock: number, content?: FileResult) => {
       const previous = hasRead.get(uri);
@@ -537,13 +582,14 @@ export class LanguageState {
       this._watcher = vscode.workspace.createFileSystemWatcher("**/*");
 
       const watchRead = async (currentClock: number, uri: vscode.Uri) => {
-        console.log("watchRead", uri, currentClock, watches);
-        const uriStr = uri.toString();
+        const serverUri = serverUriForWorkspaceUri(uri);
+        const uriStr = serverUri.toString();
+        console.log("watchRead", uri, "as", uriStr, currentClock, watches);
         if (!watches.has(uriStr)) {
           return;
         }
 
-        const content = await tryRead(uri);
+        const content = await tryRead(serverUri);
         if (!registerHasRead(uriStr, currentClock, content)) {
           return;
         }
