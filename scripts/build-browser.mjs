@@ -76,7 +76,7 @@ async function main() {
   const env = { ...process.env };
   const toolsRoot = env.TINYMIST_TOOLS_DIR || path.join(os.homedir(), ".cache", "tinymist-tools");
   const yarnBin = path.join(toolsRoot, "yarn", "1.22.22", "node_modules", ".bin");
-  const wasmPackHome = path.join(toolsRoot, "wasm-pack", "0.15.1");
+  const wasmPackHome = path.join(toolsRoot, "wasm-pack", "0.15.1", "bin");
 
   if (process.platform !== "win32") {
     run("bash", ["scripts/ensure-wasm-tools.sh"], { env });
