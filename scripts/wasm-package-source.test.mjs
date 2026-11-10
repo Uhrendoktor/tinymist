@@ -63,6 +63,20 @@ test("rejects symbolic links in local package directories", async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
+test("rejects a symlink used as the package source root", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "tinymist-package-source-root-link-"));
+  const realSource = path.join(root, "real");
+  const sourceLink = path.join(root, "source-link");
+  await fs.mkdir(realSource);
+  await fs.writeFile(path.join(realSource, "typst.toml"), '[package]\nname = "example"\nversion = "1.0.0"\n');
+  await fs.symlink(realSource, sourceLink, "dir");
+  await assert.rejects(
+    copyPackageDirectory(sourceLink, path.join(root, "destination")),
+    /source root must be a real directory/,
+  );
+  await fs.rm(root, { recursive: true, force: true });
+});
+
 test("checks out a selected Git branch and pinned commit", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "tinymist-git-package-"));
   const repository = path.join(root, "repository");
