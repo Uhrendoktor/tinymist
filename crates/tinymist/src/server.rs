@@ -428,6 +428,9 @@ impl ServerState {
         };
 
         ready.project.interrupt(params);
+        if matches!(params, LspInterrupt::Compile(_)) {
+            log::info!("[browser-preview-debug] compile interrupt processed by project state");
+        }
 
         ready.schedule_async();
 

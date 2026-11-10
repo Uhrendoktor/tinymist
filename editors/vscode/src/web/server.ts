@@ -158,7 +158,11 @@ async function startServer() {
     );
     connection.onRequest((m, p) => {
       if (m === "tinymist/fsChange") {
-        console.log("[browser-fs-debug] worker received tinymist/fsChange request");
+        console.log("[browser-fs-debug] worker received tinymist/fsChange request", {
+          insertCount: (p as any)?.inserts?.length ?? 0,
+          removeCount: (p as any)?.removes?.length ?? 0,
+          isSync: (p as any)?.isSync,
+        });
       }
       return invokeBridge(() => bridge.on_request(m, p));
     });

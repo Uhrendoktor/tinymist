@@ -127,6 +127,12 @@ impl ServerState {
 
     /// Handles file system change event emitted by the client.
     pub fn fs_change(&mut self, params: FsChangeParams) -> ScheduleResult {
+        log::info!(
+            "[browser-fs-debug] Rust fs_change handler entered inserts={} removes={} sync={}",
+            params.inserts.len(),
+            params.removes.len(),
+            params.is_sync
+        );
         use base64::Engine;
         let _scope = typst_timing::TimingScope::new("fs_change");
 
