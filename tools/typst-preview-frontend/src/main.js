@@ -208,6 +208,12 @@ function installVscodeWebSocket(vscodeAPI) {
       queueMicrotask(() => {
         if (this.readyState !== VscodeWebSocket.CONNECTING) return;
         this.readyState = VscodeWebSocket.OPEN;
+        // The extension host must not deliver the buffered initial document frames
+        // until this socket exists and can receive Webview messages.
+        vscodeAPI.postMessage({
+          type: "tinymist-preview-websocket-ready",
+          taskId,
+        });
         this.emit("open", new Event("open"));
       });
     }
