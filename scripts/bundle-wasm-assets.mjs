@@ -4,7 +4,12 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { readAssetManifest } from "./wasm-assets-manifest.mjs";
+import { parseTomlDocument, readAssetManifest } from "./wasm-assets-manifest.mjs";
+import {
+  extractSpdxLicenseIds,
+  isSpdxLicensePointer,
+  resolvePackageLicenseMetadata,
+} from "./wasm-package-license.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const outputDir = path.join(root, "target", "wasm-assets");
@@ -89,15 +94,8 @@ function packageUrl(item) {
   return item.url || "https://packages.typst.org/" + item.namespace + "/" + item.name + "-" + item.version + ".tar.gz";
 }
 
-function lockRecord(id, item, url, digest, licenseDigest) {
-  return {
-    id,
-    url,
-    sha256: digest,
-    license: item.license,
-    licenseUrl: item.licenseUrl,
-    licenseSha256: licenseDigest
-  };
+function packageLockRecord(id, url, digest, license, licenseNotices) {
+  return { id, url, sha256: digest, license, licenseNotices };
 }
 
 function validateManifest(manifest) {
@@ -118,7 +116,17 @@ function validateManifest(manifest) {
     safeSegment(item.namespace, "package namespace");
     safeSegment(item.name, "package name");
     safeSegment(item.version, "package version");
-    assert.ok(item.license && item.licenseUrl, "each package must declare license and licenseUrl");
+    if (item.license !== undefined) {
+      assert.equal(typeof item.license, "string", "package license override must be a string");
+    }
+    if (item.licenseFile !== undefined) {
+      assert.equal(typeof item.licenseFile, "string", "package license-file override must be a string");
+      assert.ok(!path.isAbsolute(item.licenseFile), "package license-file must be relative to the package archive");
+      assert.ok(!item.licenseFile.split(/[\\/]/).includes(".."), "package license-file must not contain '..'");
+    }
+    if (item.licenseUrl !== undefined) {
+      assert.match(item.licenseUrl, /^https:\\/\\//, "package license-url override must use HTTPS");
+    }
     const id = packageKey(item);
     assert.ok(!packageIds.has(id), "duplicate package: " + id);
     packageIds.add(id);
@@ -199,11 +207,11 @@ async function main() {
   const { limits, packageIds, fontIds } = validateManifest(manifest);
   const manifestLabel = path.basename(manifestPath);
   const lockPath = manifestPath.replace(/\.(?:toml|json)$/i, ".lock.json");
-  let previousLock = { schemaVersion: 1, packages: [], fonts: [] };
+  let previousLock = { schemaVersion: 2, packages: [], fonts: [] };
 
   if (args.mode === "locked") {
     previousLock = JSON.parse(await fs.readFile(lockPath, "utf8"));
-    assert.equal(previousLock.schemaVersion, 1, "unsupported asset lock schema");
+    assert.equal(previousLock.schemaVersion, 2, "unsupported asset lock schema; regenerate it with --update-lock");
     assert.equal(previousLock.manifest, manifestLabel, "asset lock belongs to a different manifest");
     assert.ok(Array.isArray(previousLock.packages) && Array.isArray(previousLock.fonts), "invalid asset lock");
     assert.deepEqual(
@@ -239,8 +247,7 @@ async function main() {
     const previous = previousPackages.get(id);
     if (args.mode === "locked") {
       assert.equal(previous.url, url, "package URL changed for " + id + "; update the lock");
-      assert.equal(previous.license, item.license, "package license changed for " + id + "; update the lock");
-      assert.equal(previous.licenseUrl, item.licenseUrl, "package license URL changed for " + id + "; update the lock");
+      assert.ok(Array.isArray(previous.licenseNotices), "package lock is missing resolved license notices for " + id);
     }
 
     const archive = await fetchBytes(
@@ -263,21 +270,94 @@ async function main() {
     extractPackage(safeArchive, destination);
     await fs.rm(safeArchive, { force: true });
 
-    const notice = await fetchBytes(
-      item.licenseUrl,
-      256 * 1024,
-      "license notice for " + id,
-      args.mode === "locked" ? previous.licenseSha256 : undefined,
-    );
-    const licenseDigest = sha256(notice);
-    if (args.mode === "locked") {
-      assert.equal(licenseDigest, previous.licenseSha256, "license notice SHA-256 mismatch for package " + id);
+    const packageTomlPath = path.join(destination, "typst.toml");
+    const packageToml = await fs.readFile(packageTomlPath, "utf8").catch((error) => {
+      if (error?.code === "ENOENT") {
+        throw new Error("Typst package " + id + " does not contain typst.toml; add an explicit package license override only for non-registry packages");
+      }
+      throw error;
+    });
+    const packageManifest = await parseTomlDocument(packageToml);
+    const resolvedLicense = resolvePackageLicenseMetadata(packageManifest, item, id);
+
+    const licenseNotices = [];
+    const noticeTexts = [];
+    if (resolvedLicense.licenseUrl) {
+      const previousNotice = previous?.licenseNotices?.find((notice) => notice.url === resolvedLicense.licenseUrl);
+      if (args.mode === "locked") {
+        assert.ok(previousNotice, "package lock is missing the explicit license notice for " + id);
+      }
+      const notice = await fetchBytes(
+        resolvedLicense.licenseUrl,
+        256 * 1024,
+        "license notice for " + id,
+        args.mode === "locked" ? previousNotice.sha256 : undefined,
+      );
+      const digestNotice = sha256(notice);
+      licenseNotices.push({ url: resolvedLicense.licenseUrl, sha256: digestNotice });
+      noticeTexts.push({ source: resolvedLicense.licenseUrl, bytes: notice });
+    } else {
+      const licensePath = path.resolve(destination, resolvedLicense.licenseFile);
+      assert.ok(
+        licensePath.startsWith(destination + path.sep),
+        "package license-file must stay inside the extracted package",
+      );
+      let archiveLicense;
+      try {
+        archiveLicense = await fs.readFile(licensePath);
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+        if (item.licenseFile) {
+          throw new Error("configured license-file " + item.licenseFile + " was not found in " + id);
+        }
+      }
+
+      if (archiveLicense && !isSpdxLicensePointer(archiveLicense.toString("utf8"), resolvedLicense.license)) {
+        const digestNotice = sha256(archiveLicense);
+        licenseNotices.push({
+          source: "archive:" + resolvedLicense.licenseFile,
+          sha256: digestNotice,
+        });
+        noticeTexts.push({
+          source: "archive:" + resolvedLicense.licenseFile,
+          bytes: archiveLicense,
+        });
+      } else {
+        const licenseIds = extractSpdxLicenseIds(resolvedLicense.license);
+        for (const licenseId of licenseIds) {
+          const licenseUrl = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/" +
+            encodeURIComponent(licenseId) + ".txt";
+          const previousNotice = previous?.licenseNotices?.find((notice) => notice.id === licenseId);
+          if (args.mode === "locked") {
+            assert.ok(previousNotice, "package lock is missing SPDX license text " + licenseId + " for " + id);
+          }
+          const notice = await fetchBytes(
+            licenseUrl,
+            256 * 1024,
+            "SPDX license text " + licenseId + " for " + id,
+            args.mode === "locked" ? previousNotice.sha256 : undefined,
+          );
+          const digestNotice = sha256(notice);
+          licenseNotices.push({ id: licenseId, url: licenseUrl, sha256: digestNotice });
+          noticeTexts.push({ source: "SPDX:" + licenseId, bytes: notice });
+        }
+      }
     }
-    await fs.writeFile(path.join(noticesDir, id.replace(/[/:]/g, "-") + ".txt"), notice);
-    packageLock.push(lockRecord(id, item, url, digest, licenseDigest));
-    noticeLines.push(id + " — " + item.license + " — " + url);
-    noticeLines.push(notice.toString("utf8"));
-    noticeLines.push("");
+
+    const packageRecord = packageLockRecord(id, url, digest, resolvedLicense.license, licenseNotices);
+    if (args.mode === "locked") {
+      assert.deepEqual(packageRecord, previous, "resolved package license or lock record changed for " + id + "; update the lock");
+    }
+    packageLock.push(packageRecord);
+    noticeLines.push(id + " — " + resolvedLicense.license + " — " + url);
+    for (let noticeIndex = 0; noticeIndex < noticeTexts.length; noticeIndex += 1) {
+      const notice = noticeTexts[noticeIndex];
+      const filename = id.replace(/[/:]/g, "-") + "-" + (noticeIndex + 1) + ".txt";
+      await fs.writeFile(path.join(noticesDir, filename), notice.bytes);
+      noticeLines.push("License notice source: " + notice.source);
+      noticeLines.push(notice.bytes.toString("utf8"));
+      noticeLines.push("");
+    }
   }
 
   const previousFonts = new Map(previousLock.fonts.map((item) => [item.id, item]));
@@ -316,7 +396,15 @@ async function main() {
       assert.equal(licenseDigest, previous.licenseSha256, "license notice SHA-256 mismatch for font " + id);
     }
     await fs.writeFile(path.join(noticesDir, id.replace(/[^A-Za-z0-9._+-]/g, "-") + ".txt"), notice);
-    fontLock.push({ ...lockRecord(id, item, item.url, digest, licenseDigest), file: item.file });
+    fontLock.push({
+      id,
+      url: item.url,
+      sha256: digest,
+      license: item.license,
+      licenseUrl: item.licenseUrl,
+      licenseSha256: licenseDigest,
+      file: item.file,
+    });
     noticeLines.push(id + " — " + item.license + " — " + item.url);
     noticeLines.push(notice.toString("utf8"));
     noticeLines.push("");
@@ -348,7 +436,7 @@ async function main() {
   await fs.writeFile(path.join(outputDir, "THIRD-PARTY-NOTICES.txt"), notices);
 
   const lock = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     manifest: manifestLabel,
     packages: packageLock,
     fonts: fontLock
