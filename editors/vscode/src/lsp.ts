@@ -675,7 +675,7 @@ export class LanguageState {
         removes,
       );
       try {
-        await client.sendRequest<void>("tinymist/fsChange", { inserts, removes, isSync: true });
+        await client.sendRequest<void>("tinymist/fsChange", { inserts, removes, isSync: false });
         console.log("[browser-fs-debug] initial fsChange acknowledged", currentClock);
       } catch (error) {
         console.error("[browser-fs-debug] initial fsChange failed", currentClock, error);
