@@ -626,7 +626,7 @@ export class LanguageState {
     };
 
     // todo: move registering to initClient to avoid unhandled errors.
-    client.onRequest("tinymist/fs/watch", (params: FsWatchRequest) => {
+    client.onRequest("tinymist/fs/watch", async (params: FsWatchRequest) => {
       const currentClock = watchClock++;
       console.log(
         "fs watch request",
@@ -654,33 +654,33 @@ export class LanguageState {
         return filesDeleted.has(path) && registerHasRead(path, currentClock, undefined);
       });
 
-      (async () => {
-        const paths = Array.from(filesToRead);
-        const readFiles = await Promise.all(paths.map((path) => tryRead(vscode.Uri.parse(path))));
+      // Subscribe before reading so edits made during the initial read are not lost.
+      watcher();
 
-        watcher();
+      const paths = Array.from(filesToRead);
+      const readFiles = await Promise.all(paths.map((path) => tryRead(vscode.Uri.parse(path))));
 
-        const inserts: FileChange[] = paths
-          .map((path, idx) => ({
-            uri: path,
-            content: readFiles[idx],
-          }))
-          .filter((change) => registerHasRead(change.uri, currentClock, change.content));
+      const inserts: FileChange[] = paths
+        .map((path, idx) => ({
+          uri: path,
+          content: readFiles[idx],
+        }))
+        .filter((change) => registerHasRead(change.uri, currentClock, change.content));
 
-        console.log("fs watch read", currentClock, inserts, removes);
-        console.log(
-          "[browser-fs-debug] sending initial fsChange",
-          currentClock,
-          inserts.map((change) => change.uri),
-          removes,
-        );
-        try {
-          await client.sendRequest<void>("tinymist/fsChange", { inserts, removes, isSync: true });
-          console.log("[browser-fs-debug] initial fsChange acknowledged", currentClock);
-        } catch (error) {
-          console.error("[browser-fs-debug] initial fsChange failed", currentClock, error);
-        }
-      })();
+      console.log("fs watch read", currentClock, inserts, removes);
+      console.log(
+        "[browser-fs-debug] sending initial fsChange",
+        currentClock,
+        inserts.map((change) => change.uri),
+        removes,
+      );
+      try {
+        await client.sendRequest<void>("tinymist/fsChange", { inserts, removes, isSync: true });
+        console.log("[browser-fs-debug] initial fsChange acknowledged", currentClock);
+      } catch (error) {
+        console.error("[browser-fs-debug] initial fsChange failed", currentClock, error);
+        throw error;
+      }
     });
   }
 
