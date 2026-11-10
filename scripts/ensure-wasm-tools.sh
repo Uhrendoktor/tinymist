@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${GITHUB_PATH:?GITHUB_PATH must be set by GitHub Actions}"
-
 tools_root="${TINYMIST_TOOLS_DIR:-$HOME/.cache/tinymist-tools}"
 mkdir -p "$tools_root"
 
@@ -11,7 +9,7 @@ yarn_bin="$yarn_prefix/node_modules/.bin"
 if [ ! -x "$yarn_bin/yarn" ] || [ "$("$yarn_bin/yarn" --version 2>/dev/null || true)" != "1.22.22" ]; then
   npm install --prefix "$yarn_prefix" --cache "$HOME/.npm" yarn@1.22.22
 fi
-echo "$yarn_bin" >> "$GITHUB_PATH"
+if [ -n "${GITHUB_PATH:-}" ]; then echo "$yarn_bin" >> "$GITHUB_PATH"; fi
 export PATH="$yarn_bin:$PATH"
 
 wasm_pack_home="$tools_root/wasm-pack/0.15.1"
@@ -31,7 +29,7 @@ if [ ! -x "$wasm_pack_bin" ] || [ "$("$wasm_pack_bin" --version 2>/dev/null || t
   test -n "$binary"
   install -m 0755 "$binary" "$wasm_pack_bin"
 fi
-echo "$wasm_pack_home" >> "$GITHUB_PATH"
+if [ -n "${GITHUB_PATH:-}" ]; then echo "$wasm_pack_home" >> "$GITHUB_PATH"; fi
 export PATH="$wasm_pack_home:$PATH"
 
 node --version
