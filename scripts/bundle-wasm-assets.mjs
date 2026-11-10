@@ -323,6 +323,9 @@ async function main() {
       }
     }
 
+    if (sourceBytes > limits.maxPackageBytes) {
+      throw new Error("package " + item.name + " exceeds maxPackageBytes");
+    }
     totalBytes += sourceBytes;
     if (totalBytes > limits.maxTotalBytes) throw new Error("WASM assets exceed maxTotalBytes");
 
