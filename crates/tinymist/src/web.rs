@@ -160,7 +160,7 @@ impl TinymistLanguageServer {
                     );
                 }
                 lsp_err(err)
-            },
+            }
         };
         poll_tokio_background_tasks();
         response
