@@ -272,12 +272,15 @@ async function main() {
 
     const packageTomlPath = path.join(destination, "typst.toml");
     const packageToml = await fs.readFile(packageTomlPath, "utf8").catch((error) => {
+      if (error?.code === "ENOENT" && item.license) return undefined;
       if (error?.code === "ENOENT") {
-        throw new Error("Typst package " + id + " does not contain typst.toml; add an explicit package license override only for non-registry packages");
+        throw new Error("Typst package " + id + " does not contain typst.toml; add an explicit license override for this non-registry package");
       }
       throw error;
     });
-    const packageManifest = await parseTomlDocument(packageToml);
+    const packageManifest = packageToml
+      ? await parseTomlDocument(packageToml)
+      : { package: { license: item.license } };
     const resolvedLicense = resolvePackageLicenseMetadata(packageManifest, item, id);
 
     const licenseNotices = [];
