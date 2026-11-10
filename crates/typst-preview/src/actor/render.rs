@@ -68,6 +68,9 @@ impl RenderActor {
         log::trace!("RenderActor: received message: {msg:?}");
 
         let res = msg.is_full_render();
+        if res {
+            log::info!("[browser-preview-debug] RenderActor received full render request");
+        }
         match msg {
             RenderActorRequest::EditorResolveSpanRange(span_range) => {
                 log::debug!("RenderActor: resolving EditorResolveSpanRange: {span_range:?}");
@@ -125,6 +128,7 @@ impl RenderActor {
             };
 
             let data = self.render(has_full_render, &document);
+            log::info!("[browser-preview-debug] RenderActor produced frame bytes={}", data.len());
             let Ok(_) = self.svg_sender.send(data) else {
                 log::info!("RenderActor: svg_sender is dropped");
                 break;

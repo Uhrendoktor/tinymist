@@ -345,6 +345,16 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
         messageData.slice(message_idx + 1),
       ];
       console.log("recv", message[0], messageData.length);
+      const browserState = (window as any).vscode_state;
+      const vscodeApi = (window as any).__tinymistVscodeApi;
+      if (browserState?.browserTransport === true) {
+        vscodeApi?.postMessage?.({
+          type: "tinymist-preview-frame-parsed",
+          taskId: browserState.taskId,
+          frameKind: message[0],
+          byteLength: messageData.byteLength,
+        });
+      }
       // console.log(message[0], message[1].length);
       if (isContentPreview) {
         // whether to scroll to the content preview when user updates document
@@ -461,7 +471,20 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
         return;
       }
 
-      svgDoc.addChangement(message as any);
+      try {
+        svgDoc.addChangement(message as any);
+      } catch (error) {
+        const browserState = (window as any).vscode_state;
+        const vscodeApi = (window as any).__tinymistVscodeApi;
+        if (browserState?.browserTransport === true) {
+          vscodeApi?.postMessage?.({
+            type: "tinymist-preview-frame-error",
+            taskId: browserState.taskId,
+            message: error instanceof Error ? error.stack || error.message : String(error),
+          });
+        }
+        throw error;
+      }
       if ((window as any).vscode_state?.browserTransport === true) {
         window.dispatchEvent(new Event("tinymist-preview-rendered"));
       }

@@ -188,6 +188,11 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
         frontendStarted: t.browserTelemetry?.frontendStarted ?? false,
         browserTransportEnabled: t.browserTelemetry?.browserTransportEnabled ?? false,
         webviewSocketReady: t.browserTelemetry?.webviewSocketReady ?? false,
+        webviewFramesReceived: t.browserTelemetry?.webviewFramesReceived ?? 0,
+        frontendFramesParsed: t.browserTelemetry?.frontendFramesParsed ?? 0,
+        lastFrontendFrameKind: t.browserTelemetry?.lastFrontendFrameKind,
+        lastFrontendFrameBytes: t.browserTelemetry?.lastFrontendFrameBytes,
+        frontendFrameError: t.browserTelemetry?.frontendFrameError,
         frontendTaskId: t.browserTelemetry?.frontendTaskId,
         framesFromServer: t.browserTelemetry?.framesFromServer ?? 0,
         framesToServer: t.browserTelemetry?.framesToServer ?? 0,
@@ -366,6 +371,11 @@ interface BrowserPreviewTelemetry {
   frontendStarted: boolean;
   browserTransportEnabled?: boolean;
   webviewSocketReady: boolean;
+  webviewFramesReceived: number;
+  frontendFramesParsed: number;
+  lastFrontendFrameKind?: string;
+  lastFrontendFrameBytes?: number;
+  frontendFrameError?: string;
   bootstrapStatePresent?: boolean;
   bootstrapBrowserTransport?: boolean;
   bootstrapHref?: string;
@@ -510,6 +520,30 @@ export async function openPreviewInWebView({
           for (const frame of pendingWebviewFrames.splice(0)) {
             postBrowserFrame(frame);
           }
+          return;
+        }
+        if (
+          message?.type === "tinymist-preview-websocket-frame-received" &&
+          message.taskId === taskId
+        ) {
+          if (browserTelemetry) browserTelemetry.webviewFramesReceived += 1;
+          return;
+        }
+        if (
+          message?.type === "tinymist-preview-frame-parsed" &&
+          message.taskId === taskId
+        ) {
+          if (browserTelemetry) {
+            browserTelemetry.frontendFramesParsed += 1;
+            browserTelemetry.lastFrontendFrameKind = String(message.frameKind ?? "");
+            browserTelemetry.lastFrontendFrameBytes = Number(message.byteLength ?? 0);
+          }
+          return;
+        }
+        if (message?.type === "tinymist-preview-frame-error" && message.taskId === taskId) {
+          const error = String(message.message ?? "Unknown preview frame error");
+          if (browserTelemetry) browserTelemetry.frontendFrameError = error;
+          console.error("Tinymist preview frame processing failed:", error);
           return;
         }
         if (message?.type === "tinymist-preview-document-ready") {
@@ -678,6 +712,11 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
         frontendStarted: false,
         browserTransportEnabled: false,
         webviewSocketReady: false,
+        webviewFramesReceived: 0,
+        frontendFramesParsed: 0,
+        lastFrontendFrameKind: undefined,
+        lastFrontendFrameBytes: undefined,
+        frontendFrameError: undefined,
         frontendTaskId: undefined,
         framesFromServer: 0,
         framesToServer: 0,

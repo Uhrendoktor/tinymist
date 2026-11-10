@@ -124,6 +124,7 @@ where
                         }
                     };
                     if msg == "current" {
+                        log::info!("[browser-preview-debug] WebviewActor consumed current; requesting full render");
                         self.render_sender.send(RenderActorRequest::RenderFullLatest).log_error("WebViewActor");
                     } else if msg.starts_with("srclocation") {
                         let location = msg.split(' ').nth(1).unwrap();

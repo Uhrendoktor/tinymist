@@ -7,6 +7,11 @@ type PreviewTask = {
   frontendStarted: boolean;
   browserTransportEnabled: boolean;
   webviewSocketReady: boolean;
+  webviewFramesReceived: number;
+  frontendFramesParsed: number;
+  lastFrontendFrameKind?: string;
+  lastFrontendFrameBytes?: number;
+  frontendFrameError?: string;
   documentReady: boolean;
   bootstrapStatePresent: boolean;
   bootstrapBrowserTransport: boolean;

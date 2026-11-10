@@ -276,6 +276,20 @@ function installVscodeWebSocket(vscodeAPI) {
       if (message.kind === "pong") return;
       const data = message.kind === "text" ? message.data : decodeBase64(message.data);
       this.emit("message", new MessageEvent("message", { data }));
+      const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : undefined;
+      const commaIndex = bytes?.indexOf(44) ?? -1;
+      const frameKind =
+        bytes && commaIndex >= 0
+          ? new TextDecoder().decode(bytes.subarray(0, commaIndex))
+          : typeof data === "string"
+            ? "text"
+            : "binary";
+      vscodeAPI.postMessage({
+        type: "tinymist-preview-websocket-frame-received",
+        taskId,
+        frameKind,
+        byteLength: bytes?.byteLength ?? (typeof data === "string" ? data.length : 0),
+      });
     }
   }
 
