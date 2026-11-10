@@ -317,13 +317,13 @@ impl<F: Future> Future for TokioDrivenFuture<F> {
 fn poll_tokio_background_tasks() {
     #[cfg(target_arch = "wasm32")]
     {
-        log::info!("[browser-runtime-debug] before Tokio background-task poll");
+        log::info!("[browser-fs-debug] runtime poll entered");
         RUNTIMES.tokio_runtime.block_on(async {
             for _ in 0..64 {
                 tokio::task::yield_now().await;
             }
         });
-        log::info!("[browser-runtime-debug] after Tokio background-task poll");
+        log::info!("[browser-fs-debug] runtime poll completed");
     }
 }
 
