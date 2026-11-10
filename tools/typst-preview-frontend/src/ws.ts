@@ -26,6 +26,102 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 const NOT_AVAILABLE = "current not available";
 const COMMA = enc.encode(",");
+
+type PreviewSvgRasterMetrics = {
+  rasterWidth: number;
+  rasterHeight: number;
+  nonWhitePixelCount: number;
+  opaquePixelCount: number;
+};
+
+/**
+ * Rasterizes a copy of the actual rendered SVG with the source nodes'
+ * computed styles. This distinguishes a genuinely painted page from an SVG
+ * element that merely exists in the Webview DOM.
+ */
+async function measurePreviewSvgPixels(svg: SVGSVGElement): Promise<PreviewSvgRasterMetrics> {
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+  const sourceElements = [svg, ...Array.from(svg.querySelectorAll<SVGElement>("*"))];
+  const clonedElements = [clone, ...Array.from(clone.querySelectorAll<SVGElement>("*"))];
+  const styleProperties = [
+    "fill",
+    "fill-opacity",
+    "stroke",
+    "stroke-opacity",
+    "opacity",
+    "display",
+    "visibility",
+    "color",
+    "font-family",
+    "font-size",
+    "font-weight",
+    "text-anchor",
+    "dominant-baseline",
+    "clip-path",
+    "mask",
+    "filter",
+    "shape-rendering",
+    "transform",
+    "vector-effect",
+  ];
+
+  for (let index = 0; index < sourceElements.length; index++) {
+    const computed = getComputedStyle(sourceElements[index]);
+    const target = clonedElements[index] as SVGElement;
+    for (const property of styleProperties) {
+      const value = computed.getPropertyValue(property);
+      if (value) {
+        target.style.setProperty(property, value);
+      }
+    }
+  }
+
+  const bounds = svg.getBoundingClientRect();
+  const rasterWidth = Math.max(1, Math.min(256, Math.round(bounds.width)));
+  const rasterHeight = Math.max(1, Math.min(256, Math.round(bounds.height)));
+  if (bounds.width <= 0 || bounds.height <= 0) {
+    throw new Error(`Cannot rasterize an SVG with empty bounds: ${bounds.width}×${bounds.height}`);
+  }
+
+  const blob = new Blob([new XMLSerializer().serializeToString(clone)], {
+    type: "image/svg+xml;charset=utf-8",
+  });
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = rasterWidth;
+    canvas.height = rasterHeight;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) {
+      throw new Error("Could not create a canvas context to inspect preview paint");
+    }
+
+    // A white backing makes black/dark Typst text and graphics measurable
+    // even when the source SVG uses a transparent page background.
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, rasterWidth, rasterHeight);
+    context.drawImage(bitmap, 0, 0, rasterWidth, rasterHeight);
+
+    const pixels = context.getImageData(0, 0, rasterWidth, rasterHeight).data;
+    let nonWhitePixelCount = 0;
+    let opaquePixelCount = 0;
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      const [red, green, blue, alpha] = pixels.subarray(offset, offset + 4);
+      if (alpha > 8) {
+        opaquePixelCount += 1;
+        if (red < 245 || green < 245 || blue < 245) {
+          nonWhitePixelCount += 1;
+        }
+      }
+    }
+
+    return { rasterWidth, rasterHeight, nonWhitePixelCount, opaquePixelCount };
+  } finally {
+    bitmap.close();
+  }
+}
 export interface WsArgs {
   url: string;
   previewMode: PreviewMode;
@@ -515,22 +611,47 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
             Number(style.opacity) > 0
           );
         });
-        const firstSvgRect = visibleSvgs[0]?.getBoundingClientRect();
-        window.dispatchEvent(
-          new CustomEvent("tinymist-preview-rendered", {
-            detail: {
-              appWidth: appRect?.width ?? 0,
-              appHeight: appRect?.height ?? 0,
-              svgCount: svgs.length,
-              visibleSvgCount: visibleSvgs.length,
-              svgWidth: firstSvgRect?.width ?? 0,
-              svgHeight: firstSvgRect?.height ?? 0,
-              contentElementCount: contentElements.length,
-              visibleContentElementCount: visibleContentElements.length,
-              markupLength: app?.innerHTML.length ?? 0,
-            },
-          }),
-        );
+        const firstSvg = visibleSvgs[0];
+        const firstSvgRect = firstSvg?.getBoundingClientRect();
+        const baseMetrics = {
+          appWidth: appRect?.width ?? 0,
+          appHeight: appRect?.height ?? 0,
+          svgCount: svgs.length,
+          visibleSvgCount: visibleSvgs.length,
+          svgWidth: firstSvgRect?.width ?? 0,
+          svgHeight: firstSvgRect?.height ?? 0,
+          contentElementCount: contentElements.length,
+          visibleContentElementCount: visibleContentElements.length,
+          markupLength: app?.innerHTML.length ?? 0,
+        };
+        const publishRenderMetrics = (raster: Partial<PreviewSvgRasterMetrics> & { rasterError?: string }) => {
+          window.dispatchEvent(
+            new CustomEvent("tinymist-preview-rendered", {
+              detail: { ...baseMetrics, ...raster },
+            }),
+          );
+        };
+        if (!firstSvg) {
+          publishRenderMetrics({
+            rasterWidth: 0,
+            rasterHeight: 0,
+            nonWhitePixelCount: 0,
+            opaquePixelCount: 0,
+            rasterError: "No visible SVG page was available to rasterize",
+          });
+        } else {
+          void measurePreviewSvgPixels(firstSvg).then(
+            publishRenderMetrics,
+            (error: unknown) =>
+              publishRenderMetrics({
+                rasterWidth: 0,
+                rasterHeight: 0,
+                nonWhitePixelCount: 0,
+                opaquePixelCount: 0,
+                rasterError: error instanceof Error ? error.message : String(error),
+              }),
+          );
+        }
       }
     }
 
