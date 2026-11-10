@@ -1,0 +1,44 @@
+name: One-time README regeneration for package license improvements
+
+on:
+  push:
+    branches: [wasm/auto-package-license-lock]
+    paths:
+      - .github/workflows/one-time-license-readme.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate-readme:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wasm/auto-package-license-lock
+          fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: typst-community/setup-typst@v4
+      - name: Ensure pinned local build tools
+        run: bash scripts/ensure-wasm-tools.sh
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile --prefer-offline
+      - name: Build the documentation renderer
+        run: yarn build:typlite
+      - name: Regenerate generated documentation
+        run: node scripts/link-docs.mjs
+      - name: Commit the generated README
+        run: |
+          git add README.md
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "docs: regenerate README for automatic package licenses"
+            git push origin HEAD:wasm/auto-package-license-lock
+          fi
