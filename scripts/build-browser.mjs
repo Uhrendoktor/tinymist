@@ -65,8 +65,9 @@ function run(command, argv, options = {}) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (Number(process.versions.node.split(".")[0]) < 20) {
-    throw new Error("Node.js 20 or newer is required (Node.js 24 is used in CI).");
+  const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+  if (nodeMajor < 20 || (nodeMajor === 20 && nodeMinor < 11)) {
+    throw new Error("Node.js 20.11 or newer is required (Node.js 24 is used in CI).");
   }
   await fs.access(args.manifest);
   if (!/\.toml$/i.test(args.manifest) && !/\.json$/i.test(args.manifest)) {
@@ -87,6 +88,28 @@ async function main() {
   }
 
   env.PATH = [yarnBin, wasmPackHome, env.PATH || ""].join(path.delimiter);
+
+  const yarnVersion = spawnSync("yarn", ["--version"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  if (yarnVersion.error) throw yarnVersion.error;
+  if (yarnVersion.status !== 0 || yarnVersion.stdout.trim() !== "1.22.22") {
+    throw new Error("Yarn 1.22.22 is required. Install the pinned version and make it available on PATH.");
+  }
+
+  const wasmPackVersion = spawnSync("wasm-pack", ["--version"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  if (wasmPackVersion.error) throw wasmPackVersion.error;
+  if (wasmPackVersion.status !== 0 || wasmPackVersion.stdout.trim() !== "wasm-pack 0.15.1") {
+    throw new Error("wasm-pack 0.15.1 is required. Install the pinned version and make it available on PATH.");
+  }
 
   const installedTargets = spawnSync("rustup", ["target", "list", "--installed"], {
     cwd: root,
