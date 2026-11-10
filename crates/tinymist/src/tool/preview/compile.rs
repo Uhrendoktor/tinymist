@@ -30,7 +30,10 @@ pub struct ProjectPreviewHandler {
 impl ProjectPreviewHandler {
     /// Requests the compiler to compile the project.
     pub fn flush_compile(&self) {
-        let _ = self.project_id;
+        log::info!(
+            "[browser-preview-debug] requesting compile flush for project {:?}",
+            self.project_id
+        );
         self.client
             .interrupt(LspInterrupt::Compile(self.project_id.clone()));
     }

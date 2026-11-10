@@ -597,7 +597,13 @@ export class LanguageState {
         const inserts: FileChange[] = [{ uri: uriStr, content }];
         const removes: string[] = [];
 
-        client.sendRequest(fsChange, { inserts, removes, isSync: false });
+        console.log("[browser-fs-debug] sending watcher fsChange", currentClock, uriStr);
+        try {
+          await client.sendRequest(fsChange, { inserts, removes, isSync: false });
+          console.log("[browser-fs-debug] watcher fsChange acknowledged", currentClock, uriStr);
+        } catch (error) {
+          console.error("[browser-fs-debug] watcher fsChange failed", currentClock, uriStr, error);
+        }
       };
 
       this._watcher.onDidChange((uri) => {
@@ -662,7 +668,18 @@ export class LanguageState {
           .filter((change) => registerHasRead(change.uri, currentClock, change.content));
 
         console.log("fs watch read", currentClock, inserts, removes);
-        client.sendRequest(fsChange, { inserts, removes, isSync: true });
+        console.log(
+          "[browser-fs-debug] sending initial fsChange",
+          currentClock,
+          inserts.map((change) => change.uri),
+          removes,
+        );
+        try {
+          await client.sendRequest(fsChange, { inserts, removes, isSync: true });
+          console.log("[browser-fs-debug] initial fsChange acknowledged", currentClock);
+        } catch (error) {
+          console.error("[browser-fs-debug] initial fsChange failed", currentClock, error);
+        }
       })();
     });
   }

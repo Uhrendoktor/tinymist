@@ -417,6 +417,11 @@ impl ServerState {
     ) -> anyhow::Result<()> {
         let _start = tinymist_std::time::Instant::now();
         // log::info!("incoming interrupt: {params:?}");
+        if let LspInterrupt::Compile(project_id) = &params {
+            log::info!(
+                "[browser-preview-debug] server received compile interrupt project={project_id:?}"
+            );
+        }
         let Some(ready) = state.ready() else {
             log::info!("interrupted on not ready server");
             return Ok(());
