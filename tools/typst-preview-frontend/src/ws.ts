@@ -32,7 +32,10 @@ type PreviewSvgPaintMetrics = {
   renderMode: string;
   renderRootWidth: number;
   renderRootHeight: number;
+  pageCount: number;
   nonWhitePaintElementCount: number;
+  darkPaintElementCount: number;
+  bluePaintElementCount: number;
   paintSamples: string[];
 };
 
@@ -81,19 +84,29 @@ function measurePreviewSvgPaint(svg: SVGSVGElement): PreviewSvgPaintMetrics {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d", { willReadFrequently: true });
   let nonWhitePaintElementCount = 0;
+  let darkPaintElementCount = 0;
+  let bluePaintElementCount = 0;
   const paintSamples: string[] = [];
 
-  const isNonWhiteColor = (color: string): boolean => {
-    if (!context || !color || color === "none" || color === "transparent") {
-      return false;
+  const readColor = (color: string, opacity: string): [number, number, number] | undefined => {
+    if (!context || !color || color === "none" || color === "transparent" || Number(opacity) <= 0) {
+      return undefined;
     }
+
+    // Computed SVG colors are normally serialized as rgb()/rgba(). Canvas
+    // normalizes those values and gives us their actual channels and alpha.
     context.clearRect(0, 0, 1, 1);
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, 1, 1);
+    context.fillStyle = "#010203";
     context.fillStyle = color;
+    if (context.fillStyle === "#010203" && color.toLowerCase() !== "#010203") {
+      return undefined;
+    }
     context.fillRect(0, 0, 1, 1);
     const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
-    return alpha > 8 && (red < 245 || green < 245 || blue < 245);
+    if (alpha * Number(opacity) <= 8) {
+      return undefined;
+    }
+    return [red, green, blue];
   };
 
   for (const node of nodes) {
@@ -116,19 +129,42 @@ function measurePreviewSvgPaint(svg: SVGSVGElement): PreviewSvgPaintMetrics {
       continue;
     }
 
-    const fillVisible =
-      Number(style.fillOpacity) > 0 && isNonWhiteColor(style.fill);
-    const strokeVisible =
-      Number(style.strokeOpacity) > 0 && Number.parseFloat(style.strokeWidth) > 0 &&
-      isNonWhiteColor(style.stroke);
+    const fill = readColor(style.fill, style.fillOpacity);
+    const stroke =
+      Number.parseFloat(style.strokeWidth) > 0
+        ? readColor(style.stroke, style.strokeOpacity)
+        : undefined;
+    const colors = [fill, stroke].filter(
+      (color): color is [number, number, number] => color !== undefined,
+    );
+    if (colors.length === 0) {
+      continue;
+    }
 
-    if (fillVisible || strokeVisible) {
+    const hasNonWhitePaint = colors.some(
+      ([red, green, blue]) => red < 245 || green < 245 || blue < 245,
+    );
+    const hasDarkPaint = colors.some(
+      ([red, green, blue]) => Math.max(red, green, blue) < 96,
+    );
+    const hasBluePaint = colors.some(
+      ([red, green, blue]) => blue > 120 && blue > red * 1.35 && blue > green * 1.15,
+    );
+
+    if (hasNonWhitePaint) {
       nonWhitePaintElementCount += 1;
-      if (paintSamples.length < 8) {
-        paintSamples.push(
-          `${node.tagName.toLowerCase()}:fill=${style.fill}:stroke=${style.stroke}`,
-        );
-      }
+    }
+    if (hasDarkPaint) {
+      darkPaintElementCount += 1;
+    }
+    if (hasBluePaint) {
+      bluePaintElementCount += 1;
+    }
+
+    if (paintSamples.length < 20) {
+      paintSamples.push(
+        `${node.tagName.toLowerCase()}.${node.getAttribute("class") || ""}:fill=${style.fill}:stroke=${style.stroke}:bbox=${box.width.toFixed(2)}x${box.height.toFixed(2)}`,
+      );
     }
   }
 
@@ -137,7 +173,10 @@ function measurePreviewSvgPaint(svg: SVGSVGElement): PreviewSvgPaintMetrics {
     renderMode: svg.getAttribute("data-render-mode") || "svg",
     renderRootWidth: bounds.width,
     renderRootHeight: bounds.height,
+    pageCount: svg.querySelectorAll("g.typst-page").length,
     nonWhitePaintElementCount,
+    darkPaintElementCount,
+    bluePaintElementCount,
     paintSamples,
   };
 }
