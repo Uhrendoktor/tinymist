@@ -136,6 +136,9 @@ impl ServerState {
         mut args: Vec<JsonValue>,
     ) -> SchedulableResponse<crate::tool::preview::StartPreviewResponse> {
         let cli_args = get_arg_or_default!(args[0] as Vec<String>);
+        log::info!(
+            "[browser-preview-debug] do_start_preview command invoked args={cli_args:?}"
+        );
         self.start_preview(cli_args, crate::tool::preview::PreviewKind::Regular)
     }
 

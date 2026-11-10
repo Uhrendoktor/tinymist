@@ -439,7 +439,12 @@ export class LanguageState {
     const res = await tinymist.executeCommand<PreviewResult>(`tinymist.doStartPreview`, [
       previewArgs,
     ]);
-    return res || {};
+    if (!res || typeof res.isPrimary !== "boolean") {
+      throw new Error(
+        `Tinymist did not confirm preview task startup (response: ${JSON.stringify(res)})`,
+      );
+    }
+    return res;
   }
 
   /**
@@ -455,7 +460,12 @@ export class LanguageState {
     const res = await tinymist.executeCommand<PreviewResult>(`tinymist.doStartBrowsingPreview`, [
       previewArgs,
     ]);
-    return res || {};
+    if (!res || typeof res.isPrimary !== "boolean") {
+      throw new Error(
+        `Tinymist did not confirm browsing preview task startup (response: ${JSON.stringify(res)})`,
+      );
+    }
+    return res;
   }
 
   /**
