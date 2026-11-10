@@ -112,7 +112,8 @@ export function normalizeTomlAssetManifest(document) {
     const metadata = dependencyMetadata[name] ?? {};
     assert.ok(isRecord(metadata), "metadata for package " + name + " must be a table");
     for (const spec of specs) {
-      packages.push(normalizePackageSource(name, spec, metadata, metadata.namespace ?? "preview"));
+      const namespace = metadata.namespace ?? (isRecord(spec) ? spec.namespace : undefined) ?? "preview";
+      packages.push(normalizePackageSource(name, spec, metadata, namespace));
     }
   }
 
