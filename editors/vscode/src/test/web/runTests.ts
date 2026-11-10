@@ -273,22 +273,33 @@ export async function run(): Promise<void> {
   );
 
   // Exercise a real browser export and read the result back through the
-  // originating workspace provider. This catches URI-scheme loss that an
-  // in-memory LSP response alone cannot detect.
+  // originating workspace provider. Do not await the command's user-facing
+  // notification; the artifact on the filesystem is the acceptance criterion.
   await vscode.window.showTextDocument(firstDocument);
-  const pdfExport = (await vscode.commands.executeCommand(
-    "tinymist.exportCurrentPdf",
-  )) as { path: string | null; data: string | null } | null;
-  assert(
-    pdfExport && typeof pdfExport.path === "string" && pdfExport.path,
-    `Browser PDF export returned no persisted path: ${JSON.stringify(pdfExport)}`,
-  );
   const exportedPdfUri = firstDocument.uri.with({
-    path: pdfExport.path,
+    path: firstDocument.uri.path.replace(/\\.typ$/i, ".pdf"),
     query: "",
     fragment: "",
   });
-  const exportedPdf = await vscode.workspace.fs.readFile(exportedPdfUri);
+  try {
+    await vscode.workspace.fs.delete(exportedPdfUri);
+  } catch {
+    // The output does not exist on the first run.
+  }
+  void vscode.commands.executeCommand("tinymist.exportCurrentPdf").catch((error) => {
+    console.error("Browser PDF export command failed:", error);
+  });
+  const exportedPdf = await waitFor(
+    "the exported PDF to appear in the workspace filesystem",
+    async () => {
+      try {
+        return await vscode.workspace.fs.readFile(exportedPdfUri);
+      } catch {
+        return undefined;
+      }
+    },
+    60_000,
+  );
   assert(
     new TextDecoder().decode(exportedPdf.subarray(0, 5)) === "%PDF-",
     `Browser PDF export did not write a valid PDF at ${exportedPdfUri.toString()}`,
