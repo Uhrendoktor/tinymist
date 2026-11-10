@@ -71,7 +71,6 @@ fn is_absolute_export_path(path: &Path) -> bool {
     }
 }
 
-
 impl ServerState {
     /// Exports the current document.
     pub fn on_export(&mut self, req: OnExportRequest) -> QueryFuture {
