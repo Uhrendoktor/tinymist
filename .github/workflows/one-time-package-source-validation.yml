@@ -1,0 +1,48 @@
+name: One-time WASM package source validation
+
+on:
+  push:
+    branches: [wasm/auto-package-license-lock]
+    paths:
+      - .github/workflows/one-time-package-source-validation.yml
+      - scripts/wasm-assets-manifest.mjs
+      - scripts/wasm-assets-manifest.test.mjs
+      - scripts/wasm-package-source.mjs
+      - scripts/wasm-package-source.test.mjs
+      - scripts/bundle-wasm-assets.mjs
+      - wasm-assets.toml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-lock:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wasm/auto-package-license-lock
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Ensure pinned local build tools
+        run: bash scripts/ensure-wasm-tools.sh
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile --prefer-offline
+      - name: Test package manifest, license and source helpers
+        run: yarn test:wasm-assets
+      - name: Resolve assets and regenerate schema-v3 lock
+        run: node scripts/bundle-wasm-assets.mjs --update-lock
+      - name: Verify the generated lock in locked mode
+        run: node scripts/bundle-wasm-assets.mjs --locked
+      - name: Commit updated asset lock
+        run: |
+          git add wasm-assets.lock.json
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "build(wasm): update package source lock"
+            git push origin HEAD:wasm/auto-package-license-lock
+          fi
