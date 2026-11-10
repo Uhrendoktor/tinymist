@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 const SPDX_OPERATORS = new Set(["AND", "OR", "WITH"]);
 
 /**
- * Extract SPDX license and exception identifiers from a Typst package's
- * declared SPDX expression. LicenseRef identifiers need an explicit notice
- * source and are intentionally not guessed.
+ * Parse the SPDX expression grammar used by Typst package manifests and
+ * return every distinct license and exception identifier in source order.
+ * LicenseRef identifiers need an explicit notice source and are not guessed.
  */
 export function extractSpdxLicenseIds(expression) {
   assert.equal(typeof expression, "string", "package license must be an SPDX expression");
@@ -13,7 +13,52 @@ export function extractSpdxLicenseIds(expression) {
   const tokens = expression.match(/[A-Za-z0-9.+-]+|[()]/g) ?? [];
   assert.ok(tokens.length > 0 && tokens.join("") === compact, "unsupported SPDX license expression: " + expression);
 
-  const identifiers = tokens.filter((token) => token !== "(" && token !== ")" && !SPDX_OPERATORS.has(token));
+  let position = 0;
+  const identifiers = [];
+  const peek = () => tokens[position];
+  const take = () => tokens[position++];
+
+  const isIdentifier = (token) =>
+    typeof token === "string" && token !== "(" && token !== ")" && !SPDX_OPERATORS.has(token);
+
+  function parsePrimary() {
+    if (peek() === "(") {
+      take();
+      parseOr();
+      assert.equal(take(), ")", "unclosed parenthesis in SPDX license expression: " + expression);
+      return;
+    }
+
+    const licenseId = take();
+    assert.ok(isIdentifier(licenseId), "expected SPDX license identifier in: " + expression);
+    identifiers.push(licenseId);
+
+    if (peek() === "WITH") {
+      take();
+      const exceptionId = take();
+      assert.ok(isIdentifier(exceptionId), "expected SPDX exception identifier after WITH in: " + expression);
+      identifiers.push(exceptionId);
+    }
+  }
+
+  function parseAnd() {
+    parsePrimary();
+    while (peek() === "AND") {
+      take();
+      parsePrimary();
+    }
+  }
+
+  function parseOr() {
+    parseAnd();
+    while (peek() === "OR") {
+      take();
+      parseAnd();
+    }
+  }
+
+  parseOr();
+  assert.equal(position, tokens.length, "unexpected token in SPDX license expression: " + expression);
   assert.ok(identifiers.length > 0, "SPDX license expression contains no license identifiers");
   assert.ok(
     identifiers.every((identifier) => !identifier.startsWith("LicenseRef-") && !identifier.startsWith("DocumentRef-")),
@@ -24,17 +69,16 @@ export function extractSpdxLicenseIds(expression) {
 
 /**
  * Typst packages sometimes use LICENSE as a short SPDX pointer instead of
- * copying the full license text. In that case, the SPDX identifiers can be
- * resolved to their canonical texts.
+ * copying the full license text. In that case, resolve canonical SPDX texts.
  */
 export function isSpdxLicensePointer(text, expression) {
   const normalizedText = String(text).replace(/\r\n/g, "\n").trim().replace(/\s+/g, " ");
   const normalizedExpression = String(expression).trim().replace(/\s+/g, " ");
   if (normalizedText === normalizedExpression) return true;
 
-  return normalizedText.length <= 160 &&
-    normalizedText.split(" ").length <= 12 &&
-    /^[A-Za-z0-9.+() -]+$/.test(normalizedText);
+  // Some archives append "License" to a single SPDX identifier rather than
+  // copying the actual license text (for example, "MIT License").
+  return normalizedText === normalizedExpression + " License";
 }
 
 /**
