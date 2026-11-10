@@ -152,7 +152,30 @@ export async function parseTomlDocument(source) {
 
 export async function parseAssetManifestText(source, extension) {
   if (extension.toLowerCase() === ".json") {
-    return JSON.parse(source);
+    const legacy = JSON.parse(source);
+    if (Array.isArray(legacy.packages) && legacy.packages.every((item) => item && item.name && item.version)) {
+      return {
+        schemaVersion: 2,
+        limits: legacy.limits ?? {},
+        packages: legacy.packages.map((item) => {
+          const source = { type: "registry" };
+          const versionSpec = item.version;
+          return {
+            namespace: item.namespace ?? "preview",
+            name: item.name,
+            versionSpec,
+            source,
+            manifestKey: packageManifestKey(item.namespace ?? "preview", item.name, versionSpec, source),
+            license: item.license,
+            licenseFile: item.licenseFile,
+            licenseUrl: item.licenseUrl,
+            url: item.url,
+          };
+        }),
+        fonts: legacy.fonts ?? [],
+      };
+    }
+    return legacy;
   }
   assert.equal(
     extension.toLowerCase(),
