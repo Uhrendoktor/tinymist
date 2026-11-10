@@ -125,7 +125,7 @@ function validateManifest(manifest) {
       assert.ok(!item.licenseFile.split(/[\\/]/).includes(".."), "package license-file must not contain '..'");
     }
     if (item.licenseUrl !== undefined) {
-      assert.match(item.licenseUrl, /^https:\\/\\//, "package license-url override must use HTTPS");
+      assert.ok(item.licenseUrl.startsWith("https://"), "package license-url override must use HTTPS");
     }
     const id = packageKey(item);
     assert.ok(!packageIds.has(id), "duplicate package: " + id);
