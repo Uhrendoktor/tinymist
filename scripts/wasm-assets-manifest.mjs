@@ -34,6 +34,12 @@ function normalizePackageSource(name, spec, metadata, namespace) {
     assert.ok(isRecord(spec), 'package "' + name + '" must be a version string or a source table');
     const hasPath = spec.path !== undefined;
     const hasGit = spec.git !== undefined;
+    const allowedKeys = hasPath
+      ? new Set(["path", "namespace"])
+      : new Set(["git", "rev", "tag", "branch", "subdirectory", "namespace"]);
+    for (const key of Object.keys(spec)) {
+      assert.ok(allowedKeys.has(key), 'unsupported field "' + key + '" in source for package "' + name + '"');
+    }
     assert.ok(hasPath !== hasGit, 'package "' + name + '" source table must contain exactly one of "path" or "git"');
 
     if (hasPath) {
