@@ -277,7 +277,7 @@ export async function run(): Promise<void> {
   // notification; the artifact on the filesystem is the acceptance criterion.
   await vscode.window.showTextDocument(firstDocument);
   const exportedPdfUri = firstDocument.uri.with({
-    path: firstDocument.uri.path.replace(/\\.typ$/i, ".pdf"),
+    path: firstDocument.uri.path.replace(/\.typ$/i, ".pdf"),
     query: "",
     fragment: "",
   });
