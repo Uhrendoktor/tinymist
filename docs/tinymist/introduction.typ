@@ -40,7 +40,105 @@ The browser and WebAssembly packaging and asset-bundling capability is owned and
 
 This fork is not an upstream contribution branch. Do not merge this fork's main branch or its WASM-specific feature branches back into Myriad-Dreamin/tinymist, and do not submit fork-only WASM changes as upstream pull requests. Upstream changes flow into this fork; the WASM bundling capability is maintained here.
 
-For dependency configuration and local VSIX builds, see the #link("docs/wasm-browser-assets.md")[browser WASM asset guide].
+= Standalone browser/WASM build
+
+== Why this library exists
+
+The browser build is designed to be a **standalone Typst compiler package** for environments where a normal extension cannot download packages or fonts at runtime. This is useful for locked-down company machines, restricted networks, and offline workstations.
+
+The Typst packages and extra fonts you select are downloaded at build time, checked, and embedded into the WebAssembly (WASM) binary inside the VSIX. When the extension is running, it resolves those packages and fonts from the embedded bundle. It does not contact the Typst package registry, download fonts, or need operating-system font discovery. A package that was not bundled is reported as missing instead of being fetched from the network.
+
+The compiler runs inside the browser's WebAssembly sandbox. The WASM module has **no ambient network access and no unrestricted operating-system filesystem access**: it cannot open arbitrary files, scan folders, or make network requests by itself. To compile a document, the VS Code extension host reads the workspace inputs that the editor makes available and explicitly passes the required content to the WASM compiler through the extension API bridge. That is a controlled input channel, not direct filesystem access from WASM.
+
+This boundary limits what the compiler module can access; it is not a claim that every document or extension is automatically safe. The compiler still processes document content supplied to it, and the surrounding VS Code/browser installation should be kept up to date.
+
+For a locked-down deployment, build the VSIX on a trusted machine, transfer the finished VSIX to the target machine, and install it locally. Package and font resolution for the assets embedded in that VSIX does not require runtime network access.
+
+== Customize bundled packages and fonts
+
+The default list is in `wasm-assets.toml`. Start by copying it so that your custom bundle keeps the existing package list and built-in font settings:
+
+```sh
+cp wasm-assets.toml my-wasm-assets.toml
+```
+
+Edit `my-wasm-assets.toml`:
+
+- Add Typst packages under the existing `[dependencies]` table.
+- Pin every package to an exact version. The leading `=` is required.
+- Give each dependency an alias. Aliases let you include two versions of the same package at once.
+- Add the Typst namespace and redistribution license under the matching `[package.metadata.tinymist.dependency-metadata.<alias>]` table. The alias must match the dependency name.
+- Add extra fonts under `[package.metadata.tinymist.fonts.<alias>]`. Each font needs a downloadable file URL and license information. Only bundle fonts whose licenses permit redistribution.
+
+For example, add a package and a font like this (merge these entries into the copied manifest; do not add a second `[dependencies]` table):
+
+```toml
+[dependencies]
+my_package = { package = "my-package", version = "=1.2.3" }
+
+[package.metadata.tinymist.dependency-metadata.my_package]
+namespace = "preview"
+license = "MIT"
+license-url = "https://example.org/my-package/LICENSE"
+
+[package.metadata.tinymist.fonts.MyFontRegular]
+file = "MyFont-Regular.ttf"
+url = "https://example.org/fonts/MyFont-Regular.ttf"
+license = "SIL OFL 1.1"
+license-url = "https://example.org/fonts/OFL.txt"
+```
+
+The example names and URLs are placeholders; use the real package archive/font URL and the actual license text URL for each asset. The built-in Typst text fonts are already included. Add font entries only for extra fonts that you need.
+
+Each manifest has a neighbouring `.lock.json` file containing SHA-256 checksums for the downloaded package archives and font files. When you first use a custom manifest, or change its dependencies or fonts, generate/update that lock as part of the build with `--update-lock`. Keep the TOML file and its lock file together. For normal repeat builds, leave off `--update-lock` so the recorded checksums are enforced.
+
+== Build a browser VSIX
+
+Clone this fork and enter the repository:
+
+```sh
+git clone https://github.com/Uhrendoktor/tinymist.git
+cd tinymist
+```
+
+Build with the default package/font list:
+
+```sh
+node scripts/build-browser.mjs
+```
+
+Or build your custom manifest and choose the VSIX output path:
+
+```sh
+node scripts/build-browser.mjs \\
+  --manifest "$PWD/my-wasm-assets.toml" \\
+  --output "$PWD/dist/tinymist-web-custom.vsix" \\
+  --update-lock
+```
+
+Use `--update-lock` on the first build after changing the manifest. For later reproducible builds, run the same command without that flag. The script installs the repository's pinned JavaScript dependencies, makes sure the WASM Rust target is installed, builds the browser extension, and prints the resulting VSIX path and SHA-256 checksum.
+
+You need Node.js 20.11 or newer (Node.js 24 is used in CI), Rust and `rustup`, npm, and the usual native build tools. On Linux x86_64 and macOS/other POSIX systems, the script bootstraps the pinned Yarn and `wasm-pack` tools. On Windows, install Yarn 1.22.22 and `wasm-pack` 0.15.1 yourself and put them on `PATH`.
+
+The custom manifest can be stored outside the repository too. The full configuration reference, lock-file commands, host prerequisites, and runtime limitations are in the #link("docs/wasm-browser-assets.md")[browser WASM asset guide].
+
+== Install the VSIX in Visual Studio Code
+
+Copy the generated `.vsix` file to the computer where you want to use the extension. You do not need to install it from the Marketplace.
+
+1. Open Visual Studio Code.
+2. Open the Extensions view with `Ctrl+Shift+X` (Windows/Linux) or `Cmd+Shift+X` (macOS).
+3. Select the `...` menu in the Extensions view and choose **Install from VSIX...**. You can also open the Command Palette and run **Extensions: Install from VSIX...**.
+4. Select the VSIX you built, for example `dist/tinymist-web-custom.vsix`.
+5. Reload or restart VS Code if it asks you to.
+
+You can also install it from a terminal when the `code` command is on your `PATH`:
+
+```sh
+code --install-extension ./dist/tinymist-web-custom.vsix
+```
+
+After installation, open a `.typ` file or a Typst workspace to use the extension. For more information about VS Code's local VSIX installation, see the #link("https://code.visualstudio.com/docs/configure/extensions/extension-marketplace")[official VS Code documentation].
 
 It contains:
 - an analyzing library for Typst, see #github-link("/crates/tinymist-query/")[tinymist-query].
