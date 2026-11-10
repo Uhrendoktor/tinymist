@@ -91,6 +91,9 @@ impl TinymistLanguageServer {
             Ok(p) => p,
             Err(err) => return lsp_err(invalid_params(err)),
         };
+        if method == "tinymist/fsChange" {
+            log::info!("[browser-fs-debug] WASM bridge dispatching tinymist/fsChange");
+        }
         let is_preview_start = method == "workspace/executeCommand"
             && params.get("command").and_then(serde_json::Value::as_str)
                 == Some("tinymist.doStartPreview");
