@@ -140,10 +140,7 @@ impl ServerState {
         let mut removes = vec![];
 
         for change in params.inserts {
-            log::info!(
-                "[browser-fs-debug] fs_change parsing URI {:?}",
-                change.uri
-            );
+            log::info!("[browser-fs-debug] fs_change parsing URI {:?}", change.uri);
             let uri = Url::parse(&change.uri).unwrap();
             log::info!("[browser-fs-debug] fs_change parsed URI {uri:?}");
             let path: ImmutPath = tinymist_query::url_to_path(&uri).into();
@@ -159,9 +156,9 @@ impl ServerState {
                         "[browser-fs-debug] fs_change base64 decoded successfully={}",
                         decoded.is_ok()
                     );
-                    decoded
-                        .map(Bytes::new)
-                        .map_err(|e| FileError::Other(Some(_eco_format!("base64 decode error: {e}"))))
+                    decoded.map(Bytes::new).map_err(|e| {
+                        FileError::Other(Some(_eco_format!("base64 decode error: {e}")))
+                    })
                 }
                 FileChangeResult::Err { error } => {
                     log::info!("file content not available: {path:?} {error}");
