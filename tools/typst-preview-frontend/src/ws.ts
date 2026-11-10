@@ -27,109 +27,121 @@ const dec = new TextDecoder();
 const NOT_AVAILABLE = "current not available";
 const COMMA = enc.encode(",");
 
-type PreviewSvgRasterMetrics = {
-  rasterWidth: number;
-  rasterHeight: number;
-  nonWhitePixelCount: number;
-  opaquePixelCount: number;
+type PreviewSvgPaintMetrics = {
+  renderRootTag: string;
+  renderMode: string;
+  renderRootWidth: number;
+  renderRootHeight: number;
+  nonWhitePaintElementCount: number;
+  paintSamples: string[];
 };
 
 /**
- * Rasterizes a copy of the actual rendered SVG with the source nodes'
- * computed styles. This distinguishes a genuinely painted page from an SVG
- * element that merely exists in the Webview DOM.
+ * Wait for typst-dom's asynchronous renderer queue to drain. addChangement()
+ * only schedules rendering on requestAnimationFrame; measuring immediately
+ * after it returns observes the empty/pre-render SVG shell.
  */
-async function measurePreviewSvgPixels(svg: SVGSVGElement): Promise<PreviewSvgRasterMetrics> {
-  const clone = svg.cloneNode(true) as SVGSVGElement;
-  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+function waitForTypstRender(svgDoc: TypstDocument, timeoutMs = 10000): Promise<void> {
+  const impl = svgDoc.impl as unknown as {
+    isRendering?: boolean;
+    patchQueue?: unknown[];
+  };
 
-  const sourceElements = [svg, ...Array.from(svg.querySelectorAll<SVGElement>("*"))];
-  const clonedElements = [clone, ...Array.from(clone.querySelectorAll<SVGElement>("*"))];
-  const styleProperties = [
-    "fill",
-    "fill-opacity",
-    "stroke",
-    "stroke-opacity",
-    "opacity",
-    "display",
-    "visibility",
-    "color",
-    "font-family",
-    "font-size",
-    "font-weight",
-    "text-anchor",
-    "dominant-baseline",
-    "clip-path",
-    "mask",
-    "filter",
-    "shape-rendering",
-    "transform",
-    "vector-effect",
-  ];
-
-  for (let index = 0; index < sourceElements.length; index++) {
-    const computed = getComputedStyle(sourceElements[index]);
-    const target = clonedElements[index] as SVGElement;
-    for (const property of styleProperties) {
-      const value = computed.getPropertyValue(property);
-      if (value) {
-        target.style.setProperty(property, value);
+  return new Promise((resolve, reject) => {
+    const deadline = performance.now() + timeoutMs;
+    const check = () => {
+      if (impl.isRendering === false && (!impl.patchQueue || impl.patchQueue.length === 0)) {
+        // The renderer sets isRendering=false immediately before postRender().
+        // This callback runs after that animation-frame callback has returned.
+        resolve();
+        return;
       }
-    }
-  }
-
-  const bounds = svg.getBoundingClientRect();
-  const rasterWidth = Math.max(1, Math.min(256, Math.round(bounds.width)));
-  const rasterHeight = Math.max(1, Math.min(256, Math.round(bounds.height)));
-  if (bounds.width <= 0 || bounds.height <= 0) {
-    throw new Error(`Cannot rasterize an SVG with empty bounds: ${bounds.width}×${bounds.height}`);
-  }
-
-  // Inline SVG elements can rely on CSS sizing from the containing Webview.
-  // A serialized standalone image needs intrinsic dimensions of its own.
-  clone.setAttribute("width", String(rasterWidth));
-  clone.setAttribute("height", String(rasterHeight));
-  if (!clone.hasAttribute("viewBox")) {
-    clone.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
-  }
-
-  const blob = new Blob([new XMLSerializer().serializeToString(clone)], {
-    type: "image/svg+xml;charset=utf-8",
+      if (performance.now() >= deadline) {
+        reject(new Error("Timed out waiting for typst-dom render queue to drain"));
+        return;
+      }
+      requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
   });
-  const bitmap = await createImageBitmap(blob);
-  try {
-    const canvas = document.createElement("canvas");
-    canvas.width = rasterWidth;
-    canvas.height = rasterHeight;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context) {
-      throw new Error("Could not create a canvas context to inspect preview paint");
+}
+
+/**
+ * Inspects the actual rendered SVG tree after typst-dom has completed its
+ * asynchronous update. It counts geometric elements whose computed fill or
+ * stroke is non-white, avoiding serialization/rasterization of a detached SVG.
+ */
+function measurePreviewSvgPaint(svg: SVGSVGElement): PreviewSvgPaintMetrics {
+  const bounds = svg.getBBox();
+  const nodes = Array.from(
+    svg.querySelectorAll<SVGGraphicsElement>(
+      "path, text, image, use, rect, circle, ellipse, line, polygon, polyline",
+    ),
+  );
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  let nonWhitePaintElementCount = 0;
+  const paintSamples: string[] = [];
+
+  const isNonWhiteColor = (color: string): boolean => {
+    if (!context || !color || color === "none" || color === "transparent") {
+      return false;
+    }
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, 1, 1);
+    context.fillStyle = color;
+    context.fillRect(0, 0, 1, 1);
+    const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
+    return alpha > 8 && (red < 245 || green < 245 || blue < 245);
+  };
+
+  for (const node of nodes) {
+    const style = getComputedStyle(node);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      Number(style.opacity) <= 0
+    ) {
+      continue;
     }
 
-    // A white backing makes black/dark Typst text and graphics measurable
-    // even when the source SVG uses a transparent page background.
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, rasterWidth, rasterHeight);
-    context.drawImage(bitmap, 0, 0, rasterWidth, rasterHeight);
+    let box: DOMRect | SVGRect;
+    try {
+      box = node.getBBox();
+    } catch {
+      continue;
+    }
+    if (box.width <= 0 && box.height <= 0) {
+      continue;
+    }
 
-    const pixels = context.getImageData(0, 0, rasterWidth, rasterHeight).data;
-    let nonWhitePixelCount = 0;
-    let opaquePixelCount = 0;
-    for (let offset = 0; offset < pixels.length; offset += 4) {
-      const [red, green, blue, alpha] = pixels.subarray(offset, offset + 4);
-      if (alpha > 8) {
-        opaquePixelCount += 1;
-        if (red < 245 || green < 245 || blue < 245) {
-          nonWhitePixelCount += 1;
-        }
+    const fillVisible =
+      Number(style.fillOpacity) > 0 && isNonWhiteColor(style.fill);
+    const strokeVisible =
+      Number(style.strokeOpacity) > 0 && Number.parseFloat(style.strokeWidth) > 0 &&
+      isNonWhiteColor(style.stroke);
+
+    if (fillVisible || strokeVisible) {
+      nonWhitePaintElementCount += 1;
+      if (paintSamples.length < 8) {
+        paintSamples.push(
+          `${node.tagName.toLowerCase()}:fill=${style.fill}:stroke=${style.stroke}`,
+        );
       }
     }
-
-    return { rasterWidth, rasterHeight, nonWhitePixelCount, opaquePixelCount };
-  } finally {
-    bitmap.close();
   }
+
+  return {
+    renderRootTag: svg.tagName.toLowerCase(),
+    renderMode: svg.getAttribute("data-render-mode") || "svg",
+    renderRootWidth: bounds.width,
+    renderRootHeight: bounds.height,
+    nonWhitePaintElementCount,
+    paintSamples,
+  };
 }
+
 export interface WsArgs {
   url: string;
   previewMode: PreviewMode;
@@ -590,76 +602,98 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
         throw error;
       }
       if ((window as any).vscode_state?.browserTransport === true) {
-        const app = document.getElementById("typst-app");
-        const appRect = app?.getBoundingClientRect();
-        const svgs = Array.from(app?.querySelectorAll("svg") ?? []);
-        const visibleSvgs = svgs.filter((svg) => {
-          const rect = svg.getBoundingClientRect();
-          const style = getComputedStyle(svg);
-          return (
-            rect.width > 0 &&
-            rect.height > 0 &&
-            style.display !== "none" &&
-            style.visibility !== "hidden" &&
-            Number(style.opacity) > 0
-          );
-        });
-        const contentElements = Array.from(
-          app?.querySelectorAll(
-            "svg path, svg text, svg image, svg use, svg rect, svg circle, svg line, svg polygon, svg polyline, svg foreignObject",
-          ) ?? [],
+        const browserState = (window as any).vscode_state;
+        const vscodeApi = (window as any).__tinymistVscodeApi;
+        void waitForTypstRender(svgDoc).then(
+          () => {
+            const app = document.getElementById("typst-app");
+            const appRect = app?.getBoundingClientRect();
+            const firstChild = app?.firstElementChild;
+            const rootSvg =
+              firstChild?.tagName.toLowerCase() === "svg"
+                ? (firstChild as SVGSVGElement)
+                : app?.querySelector<SVGSVGElement>("svg");
+            const svgs = Array.from(app?.querySelectorAll("svg") ?? []);
+            const visibleSvgs = svgs.filter((svg) => {
+              const rect = svg.getBoundingClientRect();
+              const style = getComputedStyle(svg);
+              return (
+                rect.width > 0 &&
+                rect.height > 0 &&
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                Number(style.opacity) > 0
+              );
+            });
+            const contentElements = Array.from(
+              rootSvg?.querySelectorAll(
+                "path, text, image, use, rect, circle, ellipse, line, polygon, polyline, foreignObject",
+              ) ?? [],
+            );
+            const visibleContentElements = contentElements.filter((element) => {
+              const rect = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return (
+                (rect.width > 0 || rect.height > 0) &&
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                Number(style.opacity) > 0
+              );
+            });
+            const rootRect = rootSvg?.getBoundingClientRect();
+            const paintMetrics = rootSvg
+              ? measurePreviewSvgPaint(rootSvg)
+              : {
+                  renderRootTag: firstChild?.tagName.toLowerCase() ?? "none",
+                  renderMode: "missing-svg",
+                  renderRootWidth: 0,
+                  renderRootHeight: 0,
+                  nonWhitePaintElementCount: 0,
+                  paintSamples: [],
+                };
+
+            vscodeApi?.postMessage?.({
+              type: "tinymist-preview-rendered",
+              taskId: browserState.taskId,
+              metrics: {
+                appWidth: appRect?.width ?? 0,
+                appHeight: appRect?.height ?? 0,
+                svgCount: svgs.length,
+                visibleSvgCount: visibleSvgs.length,
+                svgWidth: rootRect?.width ?? 0,
+                svgHeight: rootRect?.height ?? 0,
+                contentElementCount: contentElements.length,
+                visibleContentElementCount: visibleContentElements.length,
+                markupLength: app?.innerHTML.length ?? 0,
+                ...paintMetrics,
+              },
+            });
+          },
+          (error: unknown) => {
+            vscodeApi?.postMessage?.({
+              type: "tinymist-preview-rendered",
+              taskId: browserState.taskId,
+              metrics: {
+                appWidth: 0,
+                appHeight: 0,
+                svgCount: 0,
+                visibleSvgCount: 0,
+                svgWidth: 0,
+                svgHeight: 0,
+                contentElementCount: 0,
+                visibleContentElementCount: 0,
+                markupLength: 0,
+                renderRootTag: "none",
+                renderMode: "render-error",
+                renderRootWidth: 0,
+                renderRootHeight: 0,
+                nonWhitePaintElementCount: 0,
+                paintSamples: [],
+                renderError: error instanceof Error ? error.message : String(error),
+              },
+            });
+          },
         );
-        const visibleContentElements = contentElements.filter((element) => {
-          const rect = element.getBoundingClientRect();
-          const style = getComputedStyle(element);
-          return (
-            (rect.width > 0 || rect.height > 0) &&
-            style.display !== "none" &&
-            style.visibility !== "hidden" &&
-            Number(style.opacity) > 0
-          );
-        });
-        const firstSvg = visibleSvgs[0];
-        const firstSvgRect = firstSvg?.getBoundingClientRect();
-        const baseMetrics = {
-          appWidth: appRect?.width ?? 0,
-          appHeight: appRect?.height ?? 0,
-          svgCount: svgs.length,
-          visibleSvgCount: visibleSvgs.length,
-          svgWidth: firstSvgRect?.width ?? 0,
-          svgHeight: firstSvgRect?.height ?? 0,
-          contentElementCount: contentElements.length,
-          visibleContentElementCount: visibleContentElements.length,
-          markupLength: app?.innerHTML.length ?? 0,
-        };
-        const publishRenderMetrics = (raster: Partial<PreviewSvgRasterMetrics> & { rasterError?: string }) => {
-          window.dispatchEvent(
-            new CustomEvent("tinymist-preview-rendered", {
-              detail: { ...baseMetrics, ...raster },
-            }),
-          );
-        };
-        if (!firstSvg) {
-          publishRenderMetrics({
-            rasterWidth: 0,
-            rasterHeight: 0,
-            nonWhitePixelCount: 0,
-            opaquePixelCount: 0,
-            rasterError: "No visible SVG page was available to rasterize",
-          });
-        } else {
-          void measurePreviewSvgPixels(firstSvg).then(
-            publishRenderMetrics,
-            (error: unknown) =>
-              publishRenderMetrics({
-                rasterWidth: 0,
-                rasterHeight: 0,
-                nonWhitePixelCount: 0,
-                opaquePixelCount: 0,
-                rasterError: error instanceof Error ? error.message : String(error),
-              }),
-          );
-        }
       }
     }
 
