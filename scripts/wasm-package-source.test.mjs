@@ -67,10 +67,6 @@ test("checks out a selected Git branch and pinned commit", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "tinymist-git-package-"));
   const repository = path.join(root, "repository");
   await fs.mkdir(path.join(repository, "packages", "demo"), { recursive: true });
-  const runGit = (args, cwd = repository) => {
-    const { execFileSync } = await import("node:child_process");
-    return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
-  };
   const { execFileSync } = await import("node:child_process");
   execFileSync("git", ["init", "-q", "-b", "main", repository]);
   execFileSync("git", ["config", "user.name", "Tinymist Tests"], { cwd: repository });
