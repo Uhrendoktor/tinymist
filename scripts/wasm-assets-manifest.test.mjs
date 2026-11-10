@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { parseAssetManifestText } from "./wasm-assets-manifest.mjs";
 
-test("parses Cargo aliases, exact versions, package metadata and fonts", async () => {
+test("parses Cargo aliases and optional package license overrides", async () => {
   const manifest = await parseAssetManifestText(
     `
 [package]
@@ -24,19 +24,9 @@ max-total-bytes = 1000000
 max-package-bytes = 500000
 max-font-bytes = 250000
 
-[package.metadata.tinymist.dependency-metadata.cetz_0_3_4]
-namespace = "preview"
-license = "MIT"
-license-url = "https://example.invalid/cetz/LICENSE"
-
-[package.metadata.tinymist.dependency-metadata.cetz_0_5_3]
-namespace = "preview"
-license = "MIT"
-license-url = "https://example.invalid/cetz/LICENSE"
-
 [package.metadata.tinymist.dependency-metadata.oxifmt]
-namespace = "preview"
 license = "MIT OR Apache-2.0"
+license-file = "LICENSES/NOTICE"
 license-url = "https://example.invalid/oxifmt/LICENSE"
 
 [package.metadata.tinymist.fonts.ExampleFont]
@@ -62,11 +52,12 @@ license-url = "https://example.invalid/OFL.txt"
       license,
     })),
     [
-      { namespace: "preview", name: "cetz", version: "0.3.4", license: "MIT" },
-      { namespace: "preview", name: "cetz", version: "0.5.3", license: "MIT" },
+      { namespace: "preview", name: "cetz", version: "0.3.4", license: undefined },
+      { namespace: "preview", name: "cetz", version: "0.5.3", license: undefined },
       { namespace: "preview", name: "oxifmt", version: "1.0.0", license: "MIT OR Apache-2.0" },
     ],
   );
+  assert.equal(manifest.packages[2].licenseFile, "LICENSES/NOTICE");
   assert.equal(manifest.packages[2].licenseUrl, "https://example.invalid/oxifmt/LICENSE");
   assert.deepEqual(manifest.fonts, [
     {
