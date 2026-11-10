@@ -383,6 +383,12 @@ interface BrowserPreviewRenderMetrics {
   renderRootWidth: number;
   renderRootHeight: number;
   nonWhitePaintElementCount: number;
+  darkPaintElementCount: number;
+  bluePaintElementCount: number;
+  pageCount: number;
+  paintedGlyphElementCount: number;
+  darkTextGlyphElementCount: number;
+  blueTextGlyphElementCount: number;
   paintSamples: string[];
   renderError?: string;
 }
