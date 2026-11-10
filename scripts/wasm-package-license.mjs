@@ -10,7 +10,7 @@ const SPDX_OPERATORS = new Set(["AND", "OR", "WITH"]);
 export function extractSpdxLicenseIds(expression) {
   assert.equal(typeof expression, "string", "package license must be an SPDX expression");
   const compact = expression.replace(/\\s+/g, "");
-  const tokens = compact.match(/[A-Za-z0-9.+-]+|[()]/g) ?? [];
+  const tokens = expression.match(/[A-Za-z0-9.+-]+|[()]/g) ?? [];
   assert.ok(tokens.length > 0 && tokens.join("") === compact, "unsupported SPDX license expression: " + expression);
 
   const identifiers = tokens.filter((token) => token !== "(" && token !== ")" && !SPDX_OPERATORS.has(token));
