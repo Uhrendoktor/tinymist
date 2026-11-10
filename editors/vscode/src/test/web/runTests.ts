@@ -273,33 +273,29 @@ export async function run(): Promise<void> {
   );
 
   // Exercise a real browser export and read the result back through the
-  // originating workspace provider. Do not await the command's user-facing
-  // notification; the artifact on the filesystem is the acceptance criterion.
+  // originating workspace provider. Set an explicit output template so this
+  // acceptance test exercises persistence rather than the interactive Save As
+  // path (which is tested separately by VS Code's save-dialog integration).
   await vscode.window.showTextDocument(firstDocument);
+  await vscode.workspace.getConfiguration("tinymist").update(
+    "outputPath",
+    "$root/$dir/$name",
+    vscode.ConfigurationTarget.Workspace,
+  );
+  const pdfExport = (await vscode.commands.executeCommand(
+    "tinymist.export",
+    "Pdf",
+  )) as { path: string | null; data: string | null } | null;
+  assert(
+    pdfExport && typeof pdfExport.path === "string" && pdfExport.path,
+    `Browser PDF export returned no output path: ${JSON.stringify(pdfExport)}`,
+  );
   const exportedPdfUri = firstDocument.uri.with({
-    path: firstDocument.uri.path.replace(/\.typ$/i, ".pdf"),
+    path: pdfExport.path,
     query: "",
     fragment: "",
   });
-  try {
-    await vscode.workspace.fs.delete(exportedPdfUri);
-  } catch {
-    // The output does not exist on the first run.
-  }
-  void vscode.commands.executeCommand("tinymist.exportCurrentPdf").catch((error) => {
-    console.error("Browser PDF export command failed:", error);
-  });
-  const exportedPdf = await waitFor(
-    "the exported PDF to appear in the workspace filesystem",
-    async () => {
-      try {
-        return await vscode.workspace.fs.readFile(exportedPdfUri);
-      } catch {
-        return undefined;
-      }
-    },
-    60_000,
-  );
+  const exportedPdf = await vscode.workspace.fs.readFile(exportedPdfUri);
   assert(
     new TextDecoder().decode(exportedPdf.subarray(0, 5)) === "%PDF-",
     `Browser PDF export did not write a valid PDF at ${exportedPdfUri.toString()}`,
