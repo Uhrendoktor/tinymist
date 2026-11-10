@@ -21,9 +21,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: yarn
+      - name: Ensure pinned local build tools
+        run: bash scripts/ensure-wasm-tools.sh
       - name: Install JavaScript dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --prefer-offline
       - name: Build the documentation renderer
         run: yarn build:typlite
       - name: Regenerate generated documentation
