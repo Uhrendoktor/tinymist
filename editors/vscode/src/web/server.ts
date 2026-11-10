@@ -156,16 +156,15 @@ async function startServer() {
     connection.onInitialize((params) =>
       invokeBridge(() => bridge.on_request(InitializeRequest.method, params)),
     );
-    connection.onRequest((m, p) => {
-      if (m === "tinymist/fsChange") {
-        console.log("[browser-fs-debug] worker received tinymist/fsChange request", {
-          insertCount: (p as any)?.inserts?.length ?? 0,
-          removeCount: (p as any)?.removes?.length ?? 0,
-          isSync: (p as any)?.isSync,
-        });
-      }
-      return invokeBridge(() => bridge.on_request(m, p));
+    connection.onRequest("tinymist/fsChange", (params) => {
+      // Keep this request method-specific: the browser filesystem provider must
+      // deliver file bytes before the project's compile interrupt is processed.
+      void connection.sendNotification("tmLog", {
+        data: "[browser-fs-debug] worker selected method-specific tinymist/fsChange handler",
+      });
+      return invokeBridge(() => bridge.on_request("tinymist/fsChange", params));
     });
+    connection.onRequest((m, p) => invokeBridge(() => bridge.on_request(m, p)));
     connection.onNotification((m, p) => {
       if (m === "tinymist/preview/clientMessage") {
         console.log("[browser-preview-debug] worker received client frame", (p as any)?.taskId, (p as any)?.kind);
