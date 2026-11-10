@@ -174,7 +174,9 @@ impl TinymistLanguageServer {
             }
         };
         if method == "tinymist/fsChange" {
-            log::info!("[browser-fs-debug] on_request serialized fsChange response; before runtime poll");
+            log::info!(
+                "[browser-fs-debug] on_request serialized fsChange response; before runtime poll"
+            );
         }
         poll_tokio_background_tasks();
         if method == "tinymist/fsChange" {
