@@ -153,7 +153,14 @@ impl TinymistLanguageServer {
             //     Err(err) => lsp_err(err),
             // },
             Ok(MaybeDone::Gone) => lsp_err(internal_error("response was weirdly gone")),
-            Err(err) => lsp_err(err),
+            Err(err) => {
+                if is_preview_start {
+                    log::error!(
+                        "[browser-preview-debug] preview start request rejected before scheduling: {err:?}"
+                    );
+                }
+                lsp_err(err)
+            },
         };
         poll_tokio_background_tasks();
         response
