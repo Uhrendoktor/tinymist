@@ -599,7 +599,7 @@ export class LanguageState {
 
         console.log("[browser-fs-debug] sending watcher fsChange", currentClock, uriStr);
         try {
-          await client.sendRequest(fsChange, { inserts, removes, isSync: false });
+          await client.sendRequest<void>(FS_CHANGE_METHOD, { inserts, removes, isSync: false });
           console.log("[browser-fs-debug] watcher fsChange acknowledged", currentClock, uriStr);
         } catch (error) {
           console.error("[browser-fs-debug] watcher fsChange failed", currentClock, uriStr, error);
@@ -675,7 +675,7 @@ export class LanguageState {
           removes,
         );
         try {
-          await client.sendRequest(fsChange, { inserts, removes, isSync: true });
+          await client.sendRequest<void>("tinymist/fsChange", { inserts, removes, isSync: true });
           console.log("[browser-fs-debug] initial fsChange acknowledged", currentClock);
         } catch (error) {
           console.error("[browser-fs-debug] initial fsChange failed", currentClock, error);
@@ -1067,4 +1067,4 @@ export interface FsChangeParams {
   isSync: boolean;
 }
 
-const fsChange = new lc.RequestType<FsChangeParams, void, void>("tinymist/fsChange");
+const FS_CHANGE_METHOD = "tinymist/fsChange";
