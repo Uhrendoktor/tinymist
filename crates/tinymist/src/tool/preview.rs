@@ -284,9 +284,13 @@ fn is_rooted_browser_path(path: &str) -> bool {
 mod path_tests {
     #[test]
     fn browser_entry_paths_are_rooted_posix_paths() {
-        assert!(super::is_rooted_browser_path("/tinymist-browser-preview.typ"));
+        assert!(super::is_rooted_browser_path(
+            "/tinymist-browser-preview.typ"
+        ));
         assert!(super::is_rooted_browser_path("/workspace/document.typ"));
-        assert!(!super::is_rooted_browser_path("tinymist-browser-preview.typ"));
+        assert!(!super::is_rooted_browser_path(
+            "tinymist-browser-preview.typ"
+        ));
         assert!(!super::is_rooted_browser_path("./document.typ"));
     }
 }
