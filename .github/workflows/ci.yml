@@ -356,8 +356,8 @@ jobs:
         run: yarn workspace tinymist test:unit run src/features/previewer-provider-selection.test.ts src/web/bridge-queue.test.ts
       - name: Test Cargo-style browser asset manifest
         run: node --test scripts/wasm-assets-manifest.test.mjs
-      - name: Build and package browser-only Tinymist
-        run: yarn package:vscode:web
+      - name: Build and package browser-only Tinymist with the local build script
+        run: node scripts/build-browser.mjs
 
       - name: Export browser-only VSIX to linked /artifacts volume
         run: |
