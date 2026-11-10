@@ -282,7 +282,49 @@ jobs:
         env:
           TINYMIST_BIN: ${{ github.workspace }}/prebuilts/tinymist
 
+  checks-wasm-browser-hosted:
+    if: ${{ startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
+    name: Validate browser-only WASM preview on hosted Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+          components: rustfmt
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Ensure pinned build tools
+        run: bash scripts/ensure-wasm-tools.sh
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile --prefer-offline
+      - name: Check formatting
+        run: cargo fmt --check --all
+      - name: Test browser previewer selection
+        run: yarn workspace tinymist test:unit run src/features/previewer-provider-selection.test.ts src/web/bridge-queue.test.ts
+      - name: Build browser-only VSIX
+        run: yarn package:vscode:web
+      - name: Build browser-host integration test bundle
+        run: node scripts/build-vscode-web-tests.mjs
+      - name: Install Chromium and system dependencies
+        run: npx --yes --package=@vscode/test-web@0.0.81 playwright install --with-deps chromium
+      - name: Test packaged extension in the VS Code Web Extension Host
+        run: |
+          npx --yes @vscode/test-web@0.0.81 \
+            --browserType=chromium \
+            --testRunnerDataDir="$HOME/.cache/tinymist-tools/vscode-test-web" \
+            --extensionDevelopmentPath=target/tinymist-vscode-web-package \
+            --extensionTestsPath=target/tinymist-vscode-web-package/out/web-test-runner.js \
+            --headless=true \
+            editors/vscode/e2e-workspaces/book
+
   checks-wasm-browser:
+    needs: checks-wasm-browser-hosted
     if: ${{ startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Build and verify browser-only WASM VSIX
     runs-on: [self-hosted, Linux, X64]
