@@ -49,7 +49,10 @@ impl TinymistLanguageServer {
         let sender = serde_wasm_bindgen::from_value::<JsTransportSender>(init_opts)
             .map_err(|err| JsValue::from_str(&format!("Failed to deserialize init opts: {err}")))?;
 
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        std::panic::set_hook(Box::new(|info| {
+            log::error!("[browser-fs-debug] Rust WASM panic: {info}");
+            console_error_panic_hook::hook(info);
+        }));
 
         let _client = LspClientRoot::new_js(RUNTIMES.tokio_runtime.handle().clone(), sender);
         // Starts logging
@@ -178,9 +181,11 @@ impl TinymistLanguageServer {
                 "[browser-fs-debug] on_request serialized fsChange response; before runtime poll"
             );
         }
-        poll_tokio_background_tasks();
         if method == "tinymist/fsChange" {
+            poll_tokio_background_tasks_traced();
             log::info!("[browser-fs-debug] on_request runtime poll returned for fsChange");
+        } else {
+            poll_tokio_background_tasks();
         }
         response
     }
@@ -315,15 +320,40 @@ impl<F: Future> Future for TokioDrivenFuture<F> {
 /// bounded poll after each JavaScript/LSP callback. This keeps preview actors
 /// and their data plane responsive without enabling unavailable I/O or timers.
 fn poll_tokio_background_tasks() {
+    poll_tokio_background_tasks_inner(false);
+}
+
+fn poll_tokio_background_tasks_traced() {
+    poll_tokio_background_tasks_inner(true);
+}
+
+fn poll_tokio_background_tasks_inner(trace_yields: bool) {
     #[cfg(target_arch = "wasm32")]
     {
-        log::info!("[browser-fs-debug] runtime poll entered");
+        static POLL_ID: std::sync::atomic::AtomicUsize =
+            std::sync::atomic::AtomicUsize::new(0);
+        let poll_id = POLL_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        log::info!(
+            "[browser-fs-debug] runtime poll {poll_id} entered traced={trace_yields}"
+        );
         RUNTIMES.tokio_runtime.block_on(async {
-            for _ in 0..64 {
+            for iteration in 0..64 {
+                if trace_yields {
+                    log::info!(
+                        "[browser-fs-debug] runtime poll {poll_id} before yield {iteration}"
+                    );
+                }
                 tokio::task::yield_now().await;
+                if trace_yields {
+                    log::info!(
+                        "[browser-fs-debug] runtime poll {poll_id} after yield {iteration}"
+                    );
+                }
             }
         });
-        log::info!("[browser-fs-debug] runtime poll completed");
+        log::info!(
+            "[browser-fs-debug] runtime poll {poll_id} completed traced={trace_yields}"
+        );
     }
 }
 
