@@ -948,9 +948,18 @@ impl FutureFolder {
     where
         OP: FnOnce(&Scope<'scope>) -> R + Send + 'static,
     {
-        tokio::task::spawn_blocking(move || -> R { rayon::in_place_scope(op) })
-            .await
-            .context_ut("compute error")
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Browser WASM has a single worker and no Tokio blocking-thread pool.
+            // Rayon can execute this scope in place on the current worker.
+            Ok(rayon::in_place_scope(op))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            tokio::task::spawn_blocking(move || -> R { rayon::in_place_scope(op) })
+                .await
+                .context_ut("compute error")
+        }
     }
 
     #[must_use]
