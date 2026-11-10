@@ -378,11 +378,13 @@ interface BrowserPreviewRenderMetrics {
   contentElementCount: number;
   visibleContentElementCount: number;
   markupLength: number;
-  rasterWidth: number;
-  rasterHeight: number;
-  nonWhitePixelCount: number;
-  opaquePixelCount: number;
-  rasterError?: string;
+  renderRootTag: string;
+  renderMode: string;
+  renderRootWidth: number;
+  renderRootHeight: number;
+  nonWhitePaintElementCount: number;
+  paintSamples: string[];
+  renderError?: string;
 }
 
 interface BrowserPreviewTelemetry {
