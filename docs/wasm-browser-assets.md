@@ -72,12 +72,17 @@ node scripts/build-browser.mjs \
   --output ./dist/tinymist-web-custom.vsix
 ```
 
-The script installs the pinned Yarn and wasm-pack tools into your user cache
-when needed, installs the repository's JavaScript dependencies, adds the
+On Linux x86_64 the script installs SHA-256-verified pinned Yarn and
+wasm-pack tools into your user cache. On macOS and other POSIX host
+architectures it installs Yarn and builds the pinned wasm-pack release with
+Cargo. On Windows, install Yarn 1.22.22 and wasm-pack 0.15.1 yourself and make
+both available on PATH; the script checks those exact versions before building.
+
+The script installs the repository's JavaScript dependencies, adds the
 `wasm32-unknown-unknown` Rust target if it is missing, and builds/packages the
 browser VSIX. It does not need a fork, GitHub token, workflow dispatch, or
-self-hosted runner. Rust, Node.js 24+, npm, and the usual native build tools
-must be installed.
+self-hosted runner. Rust/rustup, Node.js 24+, npm, and the usual native build
+tools must be installed.
 
 The output argument is optional. Without it, the VSIX is written to the normal
 `dist/tinymist-web-<version>.vsix` path.
