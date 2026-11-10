@@ -15,6 +15,46 @@ export async function createBrowserLanguageClient(
   // @ts-ignore
   const worker = new Worker(serverMain.toString(true));
 
+  // Trace the raw worker transport for the browser-only filesystem sync request.
+  // BaseLanguageClient promises resolving do not by themselves prove that the
+  // JSON-RPC request crossed the Worker boundary.
+  const fsChangeRequestIds = new Set<string | number>();
+  const summarizeWorkerMessage = (message: unknown) => {
+    let value: any = message;
+    if (typeof value === "string") {
+      try {
+        value = JSON.parse(value);
+      } catch {
+        return undefined;
+      }
+    }
+    if (!value || typeof value !== "object") return undefined;
+    return value;
+  };
+  const originalWorkerPostMessage = worker.postMessage.bind(worker);
+  (worker as any).postMessage = (...args: any[]) => {
+    const message = summarizeWorkerMessage(args[0]);
+    if (message?.method === "tinymist/fsChange") {
+      console.log("[browser-fs-debug] raw Worker.postMessage fsChange", {
+        id: message.id,
+        params: message.params,
+      });
+      if (message.id !== undefined) fsChangeRequestIds.add(message.id);
+    }
+    return originalWorkerPostMessage(...args);
+  };
+  worker.addEventListener("message", (event: MessageEvent) => {
+    const message = summarizeWorkerMessage(event.data);
+    if (message?.id !== undefined && fsChangeRequestIds.has(message.id)) {
+      console.log("[browser-fs-debug] raw Worker response for fsChange", {
+        id: message.id,
+        result: message.result,
+        error: message.error,
+      });
+      fsChangeRequestIds.delete(message.id);
+    }
+  });
+
   /// Waits for the server worker to be ready before returning the client.
   /// Progress and errors are sent as control messages before the LSP client starts listening.
   await new Promise<void>((resolve, reject) => {
