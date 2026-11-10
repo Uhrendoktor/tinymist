@@ -353,6 +353,7 @@ impl ExportTask {
         let fut = self.export_folder.spawn(rev, || {
             let task = config.task.clone();
             let artifact = artifact.clone();
+            #[cfg(target_arch = "wasm32")]
             let client = client.clone();
             Box::pin(async move {
                 #[cfg(target_arch = "wasm32")]
