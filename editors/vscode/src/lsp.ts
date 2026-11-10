@@ -577,14 +577,12 @@ export class LanguageState {
       if (this._watcher) {
         return this._watcher;
       }
-      console.log("registering watcher");
 
       this._watcher = vscode.workspace.createFileSystemWatcher("**/*");
 
       const watchRead = async (currentClock: number, uri: vscode.Uri) => {
         const serverUri = serverUriForWorkspaceUri(uri);
         const uriStr = serverUri.toString();
-        console.log("watchRead", uri, "as", uriStr, currentClock, watches);
         if (!watches.has(uriStr)) {
           return;
         }
@@ -597,28 +595,23 @@ export class LanguageState {
         const inserts: FileChange[] = [{ uri: uriStr, content }];
         const removes: string[] = [];
 
-        console.log("[browser-fs-debug] sending watcher fsChange", currentClock, uriStr);
         try {
           await client.sendRequest<void>(FS_CHANGE_METHOD, { inserts, removes, isSync: false });
-          console.log("[browser-fs-debug] watcher fsChange acknowledged", currentClock, uriStr);
         } catch (error) {
-          console.error("[browser-fs-debug] watcher fsChange failed", currentClock, uriStr, error);
+          console.error("Failed to send watcher filesystem change", currentClock, uriStr, error);
         }
       };
 
       this._watcher.onDidChange((uri) => {
         const currentClock = watchClock++;
-        console.log("fs change", uri, currentClock);
         watchRead(currentClock, uri);
       });
       this._watcher.onDidCreate((uri) => {
         const currentClock = watchClock++;
-        console.log("fs create", uri, currentClock);
         watchRead(currentClock, uri);
       });
       this._watcher.onDidDelete((uri) => {
         const currentClock = watchClock++;
-        console.log("fs delete", uri, currentClock);
         watchRead(currentClock, uri);
       });
 
@@ -628,11 +621,6 @@ export class LanguageState {
     // todo: move registering to initClient to avoid unhandled errors.
     client.onRequest("tinymist/fs/watch", async (params: FsWatchRequest) => {
       const currentClock = watchClock++;
-      console.log(
-        "fs watch request",
-        params,
-        vscode.workspace.workspaceFolders?.map((folder) => folder.uri.toString()),
-      );
 
       const filesToRead = new Set<string>();
       const filesDeleted = new Set<string>();
@@ -667,18 +655,10 @@ export class LanguageState {
         }))
         .filter((change) => registerHasRead(change.uri, currentClock, change.content));
 
-      console.log("fs watch read", currentClock, inserts, removes);
-      console.log(
-        "[browser-fs-debug] sending initial fsChange",
-        currentClock,
-        inserts.map((change) => change.uri),
-        removes,
-      );
       try {
         await client.sendRequest<void>("tinymist/fsChange", { inserts, removes, isSync: false });
-        console.log("[browser-fs-debug] initial fsChange acknowledged", currentClock);
       } catch (error) {
-        console.error("[browser-fs-debug] initial fsChange failed", currentClock, error);
+        console.error("Failed to send initial workspace filesystem changes", error);
         throw error;
       }
     });
