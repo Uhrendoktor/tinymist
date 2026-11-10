@@ -187,6 +187,7 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
         frontendError: t.browserTelemetry?.frontendError,
         frontendStarted: t.browserTelemetry?.frontendStarted ?? false,
         browserTransportEnabled: t.browserTelemetry?.browserTransportEnabled ?? false,
+        webviewSocketReady: t.browserTelemetry?.webviewSocketReady ?? false,
         frontendTaskId: t.browserTelemetry?.frontendTaskId,
         framesFromServer: t.browserTelemetry?.framesFromServer ?? 0,
         framesToServer: t.browserTelemetry?.framesToServer ?? 0,
@@ -364,6 +365,7 @@ function getPreviewConfCompat<T>(s: string) {
 interface BrowserPreviewTelemetry {
   frontendStarted: boolean;
   browserTransportEnabled?: boolean;
+  webviewSocketReady: boolean;
   bootstrapStatePresent?: boolean;
   bootstrapBrowserTransport?: boolean;
   bootstrapHref?: string;
@@ -467,21 +469,49 @@ export async function openPreviewInWebView({
     localResourceRoots: previewer.localResourceRoots,
   };
 
-  // Replace the native WebSocket with a task-scoped extension-host bridge in the browser.
+  // The preview can emit its first document frame before the Webview module
+  // finishes initializing. Hold those frames until the frontend WebSocket shim
+  // has opened a receiving socket; merely assigning the HTML or receiving its
+  // document-ready notification is too early.
+  let webviewSocketReady = false;
+  const pendingWebviewFrames: BrowserPreviewDataMessage[] = [];
+  const postBrowserFrame = (message: BrowserPreviewDataMessage) => {
+    if (browserTelemetry) {
+      browserTelemetry.framesFromServer += 1;
+    }
+    void panel.webview.postMessage({
+      type: "tinymist-preview-frame",
+      taskId,
+      message,
+    });
+  };
   const browserMessageListener = browserTransport
     ? tinymist.registerBrowserPreviewMessageListener(taskId, (message) => {
-        if (browserTelemetry) {
-          browserTelemetry.framesFromServer += 1;
+        if (!webviewSocketReady) {
+          if (pendingWebviewFrames.length >= 512) {
+            pendingWebviewFrames.shift();
+          }
+          pendingWebviewFrames.push(message);
+          return;
         }
-        void panel.webview.postMessage({
-          type: "tinymist-preview-frame",
-          taskId,
-          message,
-        });
+        postBrowserFrame(message);
       })
     : undefined;
   const browserRequestListener = browserTransport
     ? panel.webview.onDidReceiveMessage((message) => {
+        if (
+          message?.type === "tinymist-preview-websocket-ready" &&
+          message.taskId === taskId
+        ) {
+          webviewSocketReady = true;
+          if (browserTelemetry) {
+            browserTelemetry.webviewSocketReady = true;
+          }
+          for (const frame of pendingWebviewFrames.splice(0)) {
+            postBrowserFrame(frame);
+          }
+          return;
+        }
         if (message?.type === "tinymist-preview-document-ready") {
           if (browserTelemetry) {
             browserTelemetry.documentReady = true;
@@ -647,6 +677,7 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
     ? {
         frontendStarted: false,
         browserTransportEnabled: false,
+        webviewSocketReady: false,
         frontendTaskId: undefined,
         framesFromServer: 0,
         framesToServer: 0,
