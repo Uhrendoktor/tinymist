@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: typst-community/setup-typst@v4
       - name: Ensure pinned local build tools
         run: bash scripts/ensure-wasm-tools.sh
       - name: Install JavaScript dependencies
@@ -42,9 +43,11 @@ jobs:
           fi
       - name: Delete merged feature branches
         run: |
-          git push origin --delete \
-            wasm/full-browser-tinymist \
-            wasm/cargo-assets-manifest
+          for branch in wasm/full-browser-tinymist wasm/cargo-assets-manifest; do
+            if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null; then
+              git push origin --delete "$branch"
+            fi
+          done
           remaining="$(git ls-remote --heads origin \
             refs/heads/wasm/full-browser-tinymist \
             refs/heads/wasm/cargo-assets-manifest)"
