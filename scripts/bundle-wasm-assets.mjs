@@ -202,21 +202,22 @@ async function main() {
   // Custom manifests may live outside the checkout, so users can build
   // personal browser bundles without maintaining a fork.
   const manifestPath = path.resolve(root, args.manifest);
+  const manifestDirectory = path.dirname(manifestPath);
   assert.match(manifestPath, /\.(?:toml|json)$/i, "asset manifest must be a TOML or JSON file");
   const manifest = await readAssetManifest(manifestPath);
-  const { limits, packageIds, fontIds } = validateManifest(manifest);
+  const { limits, packageKeys, fontIds } = validateManifest(manifest);
   const manifestLabel = path.basename(manifestPath);
   const lockPath = manifestPath.replace(/\.(?:toml|json)$/i, ".lock.json");
-  let previousLock = { schemaVersion: 2, packages: [], fonts: [] };
+  let previousLock = { schemaVersion: 3, packages: [], fonts: [] };
 
   if (args.mode === "locked") {
     previousLock = JSON.parse(await fs.readFile(lockPath, "utf8"));
-    assert.equal(previousLock.schemaVersion, 2, "unsupported asset lock schema; regenerate it with --update-lock");
+    assert.equal(previousLock.schemaVersion, 3, "unsupported asset lock schema; regenerate it with --update-lock");
     assert.equal(previousLock.manifest, manifestLabel, "asset lock belongs to a different manifest");
     assert.ok(Array.isArray(previousLock.packages) && Array.isArray(previousLock.fonts), "invalid asset lock");
     assert.deepEqual(
-      previousLock.packages.map((item) => item.id).sort(),
-      [...packageIds].sort(),
+      previousLock.packages.map((item) => item.manifestKey).sort(),
+      [...packageKeys].sort(),
       "package lock does not match the manifest; run with --update-lock and commit the generated lock"
     );
     assert.deepEqual(
@@ -234,55 +235,127 @@ async function main() {
   let totalBytes = 0;
   const packageLock = [];
   const fontLock = [];
+  const resolvedPackageIds = new Set();
   const noticeLines = [
     "Third-party assets bundled into Tinymist's browser WebAssembly module.",
     "The corresponding asset bytes are embedded in tinymist_bg.wasm; this file records their redistribution notices.",
     ""
   ];
 
-  const previousPackages = new Map(previousLock.packages.map((item) => [item.id, item]));
-  for (const item of manifest.packages) {
-    const id = packageKey(item);
-    const url = packageUrl(item);
-    const previous = previousPackages.get(id);
+  const previousPackages = new Map(previousLock.packages.map((item) => [item.manifestKey, item]));
+  for (let packageIndex = 0; packageIndex < manifest.packages.length; packageIndex += 1) {
+    const item = manifest.packages[packageIndex];
+    const previous = previousPackages.get(item.manifestKey);
     if (args.mode === "locked") {
-      assert.equal(previous.url, url, "package URL changed for " + id + "; update the lock");
-      assert.ok(Array.isArray(previous.licenseNotices), "package lock is missing resolved license notices for " + id);
+      assert.ok(previous, "package lock is missing " + item.manifestKey);
+      assert.ok(Array.isArray(previous.licenseNotices), "package lock is missing resolved license notices for " + item.manifestKey);
     }
 
-    const archive = await fetchBytes(
-      url,
-      limits.maxPackageBytes,
-      "package " + id,
-      args.mode === "locked" ? previous.sha256 : undefined,
-    );
-    const digest = sha256(archive);
-    if (args.mode === "locked") {
-      assert.equal(digest, previous.sha256, "SHA-256 mismatch for package " + id);
+    const stagingDirectory = path.join(outputDir, "staging-" + packageIndex);
+    await fs.rm(stagingDirectory, { recursive: true, force: true });
+
+    let version;
+    let digest;
+    let sourceBytes = 0;
+    let sourceRecord;
+    if (item.source.type === "registry") {
+      version = item.versionSpec === "latest"
+        ? (args.mode === "locked" ? previous.version : await fetchLatestTypstPackageVersion(item.name, item.namespace))
+        : item.versionSpec;
+      safeSegment(version, "resolved package version");
+      const resolvedItem = { ...item, version };
+      const url = packageUrl(resolvedItem);
+      sourceRecord = { type: "registry", url };
+      if (args.mode === "locked") {
+        assert.deepEqual(previous.source, sourceRecord, "package source changed for " + item.manifestKey + "; update the lock");
+      }
+
+      const archive = await fetchBytes(
+        url,
+        limits.maxPackageBytes,
+        "package " + item.namespace + "/" + item.name + ":" + version,
+        args.mode === "locked" ? previous.sha256 : undefined,
+      );
+      digest = sha256(archive);
+      sourceBytes = archive.length;
+      const safeArchive = path.join(outputDir, "download-" + packageIndex + ".tar.gz");
+      await fs.writeFile(safeArchive, archive);
+      await fs.mkdir(stagingDirectory, { recursive: true });
+      extractPackage(safeArchive, stagingDirectory);
+      await fs.rm(safeArchive, { force: true });
+    } else if (item.source.type === "path") {
+      sourceRecord = { type: "path", path: item.source.path };
+      if (args.mode === "locked") {
+        assert.deepEqual(previous.source, sourceRecord, "local package path changed for " + item.manifestKey + "; update the lock");
+      }
+      const sourceDirectory = path.resolve(manifestDirectory, item.source.path);
+      const copied = await copyPackageDirectory(sourceDirectory, stagingDirectory);
+      digest = copied.sha256;
+      sourceBytes = copied.bytes;
+    } else {
+      const sourceSpec = {
+        type: "git",
+        git: item.source.git,
+        refType: item.source.refType,
+        ref: item.source.ref,
+        subdirectory: item.source.subdirectory || ".",
+      };
+      if (args.mode === "locked") {
+        const previousSourceSpec = { ...previous.source };
+        delete previousSourceSpec.commit;
+        assert.deepEqual(previousSourceSpec, sourceSpec, "Git package source changed for " + item.manifestKey + "; update the lock");
+      }
+      const checkout = await checkoutGitPackage(
+        item.source,
+        args.mode === "locked" ? previous.source.commit : undefined,
+        path.join(outputDir, "git-" + packageIndex),
+      );
+      sourceRecord = { ...sourceSpec, commit: checkout.commit };
+      if (args.mode === "locked") {
+        assert.equal(checkout.commit, previous.source.commit, "Git commit changed for " + item.manifestKey);
+      }
+      try {
+        const copied = await copyPackageDirectory(checkout.packageDirectory, stagingDirectory);
+        digest = copied.sha256;
+        sourceBytes = copied.bytes;
+      } finally {
+        await fs.rm(checkout.repositoryDirectory, { recursive: true, force: true });
+      }
     }
-    totalBytes += archive.length;
+
+    totalBytes += sourceBytes;
     if (totalBytes > limits.maxTotalBytes) throw new Error("WASM assets exceed maxTotalBytes");
 
-    const safeArchive = path.join(outputDir, "download-" + packageLock.length + ".tar.gz");
-    await fs.writeFile(safeArchive, archive);
-    const destination = path.join(packageDir, item.namespace, item.name, item.version);
-    await fs.mkdir(destination, { recursive: true });
-    extractPackage(safeArchive, destination);
-    await fs.rm(safeArchive, { force: true });
-
-    const packageTomlPath = path.join(destination, "typst.toml");
+    const packageTomlPath = path.join(stagingDirectory, "typst.toml");
     const packageToml = await fs.readFile(packageTomlPath, "utf8").catch((error) => {
       if (error?.code === "ENOENT" && item.license) return undefined;
       if (error?.code === "ENOENT") {
-        throw new Error("Typst package " + id + " does not contain typst.toml; add an explicit license override for this non-registry package");
+        throw new Error("Typst package " + item.name + " does not contain typst.toml; add an explicit license override for this non-registry package");
       }
       throw error;
     });
     const packageManifest = packageToml
       ? await parseTomlDocument(packageToml)
-      : { package: { license: item.license } };
-    const resolvedLicense = resolvePackageLicenseMetadata(packageManifest, item, id);
+      : { package: { name: item.name, version, license: item.license } };
+    assert.equal(packageManifest.package?.name, item.name, "package name in typst.toml does not match [packages] key " + item.name);
+    version = packageManifest.package?.version;
+    assert.equal(typeof version, "string", "package " + item.name + " typst.toml must declare a version");
+    assert.match(version, /^\d+\.\d+\.\d+$/, "package " + item.name + " must declare a full x.y.z version");
+    if (item.source.type === "registry") {
+      assert.equal(version, item.versionSpec === "latest" ? previous?.version ?? version : item.versionSpec,
+        "downloaded package version does not match the requested version for " + item.name);
+    }
+    safeSegment(version, "package version");
+    const id = packageKey({ ...item, version });
+    assert.ok(!resolvedPackageIds.has(id), "duplicate resolved Typst package: " + id);
+    resolvedPackageIds.add(id);
 
+    const destination = path.join(packageDir, item.namespace, item.name, version);
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.rm(destination, { recursive: true, force: true });
+    await fs.rename(stagingDirectory, destination);
+
+    const resolvedLicense = resolvePackageLicenseMetadata(packageManifest, item, id);
     const licenseNotices = [];
     const noticeTexts = [];
     if (resolvedLicense.licenseUrl) {
@@ -347,12 +420,25 @@ async function main() {
       }
     }
 
-    const packageRecord = packageLockRecord(id, url, digest, resolvedLicense.license, licenseNotices);
+    const packageRecord = packageLockRecord(
+      id,
+      item.manifestKey,
+      sourceRecord,
+      version,
+      digest,
+      resolvedLicense.license,
+      licenseNotices,
+    );
     if (args.mode === "locked") {
-      assert.deepEqual(packageRecord, previous, "resolved package license or lock record changed for " + id + "; update the lock");
+      assert.deepEqual(packageRecord, previous, "resolved package source, license or lock record changed for " + id + "; update the lock");
     }
     packageLock.push(packageRecord);
-    noticeLines.push(id + " — " + resolvedLicense.license + " — " + url);
+    const packageSourceLabel = sourceRecord.type === "registry"
+      ? sourceRecord.url
+      : sourceRecord.type === "path"
+        ? "path:" + sourceRecord.path
+        : sourceRecord.git + "@" + sourceRecord.commit;
+    noticeLines.push(id + " — " + resolvedLicense.license + " — " + packageSourceLabel);
     for (let noticeIndex = 0; noticeIndex < noticeTexts.length; noticeIndex += 1) {
       const notice = noticeTexts[noticeIndex];
       const filename = id.replace(/[/:]/g, "-") + "-" + (noticeIndex + 1) + ".txt";
@@ -413,7 +499,7 @@ async function main() {
     noticeLines.push("");
   }
 
-  const selectedPackages = new Set(packageIds);
+  const selectedPackages = new Set(packageLock.map((item) => item.id));
   for (const packagePath of await listFiles(packageDir)) {
     if (!packagePath.endsWith(".typ")) continue;
     const source = await fs.readFile(packagePath, "utf8");
@@ -439,7 +525,7 @@ async function main() {
   await fs.writeFile(path.join(outputDir, "THIRD-PARTY-NOTICES.txt"), notices);
 
   const lock = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     manifest: manifestLabel,
     packages: packageLock,
     fonts: fontLock
@@ -464,11 +550,10 @@ async function main() {
   const packageFileCount = (await listFiles(packageDir)).length;
   const fontFileCount = (await listFiles(fontDir)).length;
   console.log(
-    "Bundled " + packageIds.size + " package(s), " + fontIds.size + " font(s), " +
+    "Bundled " + packageLock.length + " package(s), " + fontIds.size + " font(s), " +
     packageFileCount + " package file(s), " + fontFileCount + " font file(s), " +
-    totalBytes + " downloaded bytes and " + embeddedBytes + " embedded bytes. " +
+    totalBytes + " source bytes and " + embeddedBytes + " embedded bytes. " +
     "Runtime asset loading is WASM-only."
   );
 }
-
 await main();
