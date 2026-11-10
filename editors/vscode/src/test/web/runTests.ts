@@ -329,6 +329,17 @@ export async function run(): Promise<void> {
     beforeEdit.tasks.find((task) => task.taskId === firstTaskId)?.renderedFrames ?? 0;
   assert(initialRenderedFrames > 0, "The first preview did not render any frames");
 
+  // Enable the configured automatic export task separately from the manual
+  // command above. Removing the manual artifact makes the subsequent read-back
+  // prove that the onSave notification delivered and persisted a fresh PDF.
+  await vscode.workspace.fs.delete(exportedPdfUri);
+  await vscode.workspace.getConfiguration("tinymist").update(
+    "exportPdf",
+    "onSave",
+    vscode.ConfigurationTarget.Workspace,
+  );
+  await delay(250);
+
   const marker = "ORIGINAL_MARKER";
   const markerOffset = firstDocument.getText().indexOf(marker);
   assert(markerOffset >= 0, "The incremental preview marker was not found in the source");
@@ -342,7 +353,30 @@ export async function run(): Promise<void> {
     "UPDATED_MARKER",
   );
   assert(await vscode.workspace.applyEdit(edit), "Could not edit the preview source document");
-  await firstDocument.save();
+  assert(await firstDocument.save(), "Could not save the automatic-export test document");
+  const automaticExportPdf = await waitFor(
+    "automatic PDF export-on-save to persist through the workspace filesystem",
+    async () => {
+      try {
+        return await vscode.workspace.fs.readFile(exportedPdfUri);
+      } catch {
+        return undefined;
+      }
+    },
+    60_000,
+  );
+  assert(
+    new TextDecoder().decode(automaticExportPdf.subarray(0, 5)) === "%PDF-",
+    `Automatic export-on-save did not write a valid PDF at ${exportedPdfUri.toString()}`,
+  );
+  console.log(
+    `Browser automatic PDF export-on-save passed: ${exportedPdfUri.toString()} (${automaticExportPdf.length} bytes)`,
+  );
+  await vscode.workspace.getConfiguration("tinymist").update(
+    "exportPdf",
+    "never",
+    vscode.ConfigurationTarget.Workspace,
+  );
   await waitForTask(firstTaskId, (task) => task.renderedFrames > initialRenderedFrames);
 
   const secondEditor = await createTypstDocument(
