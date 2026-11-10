@@ -275,7 +275,7 @@ fn is_absolute_preview_entry(path: &Path) -> bool {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 fn is_rooted_browser_path(path: &str) -> bool {
     path.starts_with('/')
 }
