@@ -131,8 +131,8 @@ then run the browser build script:
 ```sh
 git clone https://github.com/Uhrendoktor/tinymist.git
 cd tinymist
-node scripts/build-browser.mjs \\
-  --manifest /absolute/path/to/my-wasm-assets.toml \\
+node scripts/build-browser.mjs \
+  --manifest /absolute/path/to/my-wasm-assets.toml \
   --output ./dist/tinymist-web-custom.vsix
 ```
 
@@ -157,9 +157,9 @@ Each manifest has an adjacent `.lock.json` file. Generate or update it on a
 trusted machine:
 
 ```sh
-node scripts/build-browser.mjs \\
-  --manifest /absolute/path/to/my-wasm-assets.toml \\
-  --output ./dist/tinymist-web-custom.vsix \\
+node scripts/build-browser.mjs \
+  --manifest /absolute/path/to/my-wasm-assets.toml \
+  --output ./dist/tinymist-web-custom.vsix \
   --update-lock
 ```
 
