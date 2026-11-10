@@ -328,15 +328,12 @@ async function main() {
 
     const packageTomlPath = path.join(stagingDirectory, "typst.toml");
     const packageToml = await fs.readFile(packageTomlPath, "utf8").catch((error) => {
-      if (error?.code === "ENOENT" && item.license) return undefined;
       if (error?.code === "ENOENT") {
-        throw new Error("Typst package " + item.name + " does not contain typst.toml; add an explicit license override for this non-registry package");
+        throw new Error("package source " + item.name + " does not contain typst.toml; every bundled package must declare its name and version there");
       }
       throw error;
     });
-    const packageManifest = packageToml
-      ? await parseTomlDocument(packageToml)
-      : { package: { name: item.name, version, license: item.license } };
+    const packageManifest = await parseTomlDocument(packageToml);
     assert.equal(packageManifest.package?.name, item.name, "package name in typst.toml does not match [packages] key " + item.name);
     version = packageManifest.package?.version;
     assert.equal(typeof version, "string", "package " + item.name + " typst.toml must declare a version");
