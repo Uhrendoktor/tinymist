@@ -85,6 +85,14 @@ async function measurePreviewSvgPixels(svg: SVGSVGElement): Promise<PreviewSvgRa
     throw new Error(`Cannot rasterize an SVG with empty bounds: ${bounds.width}×${bounds.height}`);
   }
 
+  // Inline SVG elements can rely on CSS sizing from the containing Webview.
+  // A serialized standalone image needs intrinsic dimensions of its own.
+  clone.setAttribute("width", String(rasterWidth));
+  clone.setAttribute("height", String(rasterHeight));
+  if (!clone.hasAttribute("viewBox")) {
+    clone.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
+  }
+
   const blob = new Blob([new XMLSerializer().serializeToString(clone)], {
     type: "image/svg+xml;charset=utf-8",
   });
