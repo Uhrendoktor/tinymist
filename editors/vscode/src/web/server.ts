@@ -5,6 +5,7 @@ import {
 } from "vscode-languageserver/browser";
 
 import { InitializeRequest } from "vscode-languageserver";
+import { createBridgeCallDispatcher } from "./bridge-queue";
 
 // @ts-ignore
 import init, { init_runtime, TinymistLanguageServer } from "tinymist-web";
@@ -90,6 +91,9 @@ async function startServer() {
      * The events are stored in the array and will be processed after the response is sent to the client.
      */
     let events: any[] = [];
+    const dispatchBridgeCall = createBridgeCallDispatcher();
+    let invokeBridge: <T>(callback: () => T) => Promise<Awaited<T>> = (callback) =>
+      dispatchBridgeCall(callback);
 
     /**
      * The bridge between the server in wasm and the client.
@@ -99,15 +103,32 @@ async function startServer() {
     const bridge = new TinymistLanguageServer({
       sendEvent: (event: any): void => void events.push(event),
       sendRequest({ id, method, params }: any): void {
-        connection
-          .sendRequest(method, params)
-          .then((result: any) => bridge.on_response({ id, result }))
-          .catch((err: any) =>
-            bridge.on_response({ id, error: { code: -32603, message: err.toString() } }),
-          );
+        // Rust's WASM object has a mutable borrow while one of its exported
+        // methods is running. Defer the cross-host request so its response
+        // cannot re-enter that object on the same JavaScript call stack.
+        queueMicrotask(() => {
+          void connection
+            .sendRequest(method, params)
+            .then(
+              (result: any) => invokeBridge(() => bridge.on_response({ id, result })),
+              (err: any) =>
+                invokeBridge(() =>
+                  bridge.on_response({ id, error: { code: -32603, message: err.toString() } }),
+                ),
+            )
+            .catch((error: unknown) => {
+              console.error("Failed to deliver browser language-server response to WASM", error);
+            });
+        });
       },
-      sendNotification: ({ method, params }: any): void =>
-        void connection.sendNotification(method, params),
+      sendNotification({ method, params }: any): void {
+        // Keep JavaScript callbacks outside the active WASM mutable borrow.
+        queueMicrotask(() => {
+          void connection.sendNotification(method, params).catch((error: unknown) => {
+            console.error("Failed to send browser language-server notification", error);
+          });
+        });
+      },
       // Rust's browser package registry needs a synchronous resolver. The
       // browser distribution currently has no populated package cache, so
       // unresolved package specs deliberately return undefined (NotFound)
@@ -116,7 +137,7 @@ async function startServer() {
     });
     reportStartup("Rust language server constructed");
 
-    // Post-processes server events after sent responses to the client.
+    // Post-process server events only after the active WASM call has returned.
     const h = <T>(res: T): T => {
       while (events.length > 0) {
         for (const event of events.splice(0)) {
@@ -126,13 +147,23 @@ async function startServer() {
       return res;
     };
 
-    connection.onInitialize((params) => h(bridge.on_request(InitializeRequest.method, params)));
-    connection.onRequest((m, p) => h(bridge.on_request(m, p)));
+    // wasm-bindgen rejects recursive mutable access to an exported object.
+    // Serialize JavaScript -> WASM entry points, releasing the queue as soon
+    // as each synchronous method returns (not when its LSP Promise settles).
+    invokeBridge = <T>(callback: () => T): Promise<Awaited<T>> =>
+      dispatchBridgeCall(() => h(callback()));
+
+    connection.onInitialize((params) =>
+      invokeBridge(() => bridge.on_request(InitializeRequest.method, params)),
+    );
+    connection.onRequest((m, p) => invokeBridge(() => bridge.on_request(m, p)));
     connection.onNotification((m, p) => {
       if (m === "tinymist/preview/clientMessage") {
         console.log("[browser-preview-debug] worker received client frame", (p as any)?.taskId, (p as any)?.kind);
       }
-      h(bridge.on_notification(m, p));
+      void invokeBridge(() => bridge.on_notification(m, p)).catch((error: unknown) => {
+        console.error("Failed to handle browser language-server notification", error);
+      });
     });
 
     reportStartup("language server ready");
@@ -144,7 +175,9 @@ async function startServer() {
     // current-thread runtime progressing between LSP and Webview messages.
     let runtimePumpCount = 0;
     setInterval(() => {
-      (bridge as any).poll_runtime();
+      void invokeBridge(() => (bridge as any).poll_runtime()).catch((error: unknown) => {
+        console.error("Failed to poll browser language-server runtime", error);
+      });
       runtimePumpCount += 1;
       if (runtimePumpCount === 1 || runtimePumpCount === 60) {
         console.log("[browser-preview-debug] runtime pump tick", runtimePumpCount);
