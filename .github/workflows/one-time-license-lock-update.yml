@@ -1,0 +1,38 @@
+name: One-time WASM package license lock refresh
+
+on:
+  push:
+    branches: [wasm/auto-package-license-lock]
+    paths:
+      - .github/workflows/one-time-license-lock-update.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wasm/auto-package-license-lock
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Ensure pinned local build tools
+        run: bash scripts/ensure-wasm-tools.sh
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile --prefer-offline
+      - name: Resolve and lock package licenses from archives
+        run: node scripts/bundle-wasm-assets.mjs --update-lock
+      - name: Commit updated asset lock
+        run: |
+          git add wasm-assets.lock.json
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "build(wasm): lock discovered package license notices"
+            git push origin HEAD:wasm/auto-package-license-lock
+          fi
