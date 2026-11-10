@@ -6,6 +6,7 @@ type PreviewTask = {
   source?: { kind?: string };
   frontendStarted: boolean;
   browserTransportEnabled: boolean;
+  webviewSocketReady: boolean;
   documentReady: boolean;
   bootstrapStatePresent: boolean;
   bootstrapBrowserTransport: boolean;
@@ -216,6 +217,7 @@ export async function run(): Promise<void> {
   await waitForTask(firstTaskId, (task) =>
     task.frontendStarted &&
     task.browserTransportEnabled &&
+    task.webviewSocketReady &&
     task.framesFromServer > 0 &&
     task.framesToServer > 0 &&
     task.renderedFrames > 0,
