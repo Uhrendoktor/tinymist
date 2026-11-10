@@ -170,15 +170,32 @@ impl ServerState {
             log::info!("[browser-fs-debug] fs_change queued converted insert");
         }
 
+        log::info!(
+            "[browser-fs-debug] fs_change finished insert loop inserts={}",
+            inserts.len()
+        );
         for path in params.removes {
             removes.push(tinymist_query::url_to_path(&Url::parse(&path).unwrap()).into());
         }
+        log::info!(
+            "[browser-fs-debug] fs_change finished removals loop removes={}",
+            removes.len()
+        );
 
-        let update = FilesystemEvent::Update(FileChangeSet { inserts, removes }, params.is_sync);
-        log::info!("fs_change: {update:?}");
+        let changeset = FileChangeSet { inserts, removes };
+        log::info!("[browser-fs-debug] fs_change created FileChangeSet");
+        let update = FilesystemEvent::Update(changeset, params.is_sync);
+        log::info!("[browser-fs-debug] fs_change created FilesystemEvent");
+        let update_debug = format!("{update:?}");
+        log::info!("[browser-fs-debug] fs_change formatted FilesystemEvent debug");
+        log::info!("fs_change: {update_debug}");
+        log::info!("[browser-fs-debug] fs_change before project interrupt");
         self.project.interrupt(Interrupt::Fs(update));
+        log::info!("[browser-fs-debug] fs_change after project interrupt");
+        log::info!("[browser-fs-debug] fs_change before schedule_async");
 
         self.schedule_async();
+        log::info!("[browser-fs-debug] fs_change after schedule_async");
         just_ok(serde_json::Value::Null)
     }
 }
