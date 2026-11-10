@@ -40,19 +40,15 @@ Edit `my-wasm-assets.toml`:
 - Add Typst packages under the existing `[dependencies]` table.
 - Pin every package to an exact version. The leading `=` is required.
 - Give each dependency an alias. Aliases let you include two versions of the same package at once.
-- Add the Typst namespace and redistribution license under the matching `[package.metadata.tinymist.dependency-metadata.<alias>]` table. The alias must match the dependency name.
+- The namespace defaults to `preview`. For published Typst packages, do not add a per-package license table: the builder reads the SPDX expression from the package’s `typst.toml` and the `LICENSE` file from the same archive. If `LICENSE` is only a short SPDX expression, the builder retrieves the canonical license text for each identifier.
+- Use `[package.metadata.tinymist.dependency-metadata.<alias>]` only for exceptional packages that need a namespace/archive URL override, an explicit license override, or a non-standard license notice source.
 - Add extra fonts under `[package.metadata.tinymist.fonts.<alias>]`. Each font needs a downloadable file URL and license information. Only bundle fonts whose licenses permit redistribution.
 
-For example, add a package and a font like this (merge these entries into the copied manifest; do not add a second `[dependencies]` table):
+For example, add a package and an extra font like this (merge these entries into the copied manifest; do not add a second `[dependencies]` table):
 
 ```toml
 [dependencies]
 my_package = { package = "my-package", version = "=1.2.3" }
-
-[package.metadata.tinymist.dependency-metadata.my_package]
-namespace = "preview"
-license = "MIT"
-license-url = "https://example.org/my-package/LICENSE"
 
 [package.metadata.tinymist.fonts.MyFontRegular]
 file = "MyFont-Regular.ttf"
@@ -61,7 +57,15 @@ license = "SIL OFL 1.1"
 license-url = "https://example.org/fonts/OFL.txt"
 ```
 
-The example names and URLs are placeholders; use the real package archive/font URL and the actual license text URL for each asset. The built-in Typst text fonts are already included. Add font entries only for extra fonts that you need.
+Only for an unusual non-registry package that lacks a `typst.toml` license declaration or standard license notice, add an explicit override:
+
+```toml
+[package.metadata.tinymist.dependency-metadata.my_package]
+license = "MIT"
+license-url = "https://example.org/my-package/LICENSE"
+```
+
+The package and font names/URLs above are placeholders. The built-in Typst text fonts are already included; add font entries only for extra fonts you need. Package license expressions, notice sources, and SHA-256 hashes are resolved automatically and recorded in the adjacent lock file.
 
 Each manifest has a neighbouring `.lock.json` file containing SHA-256 checksums for the downloaded package archives and font files. When you first use a custom manifest, or change its dependencies or fonts, generate/update that lock as part of the build with `--update-lock`. Keep the TOML file and its lock file together. For normal repeat builds, leave off `--update-lock` so the recorded checksums are enforced.
 
