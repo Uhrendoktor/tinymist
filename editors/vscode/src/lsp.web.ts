@@ -104,12 +104,6 @@ export async function createBrowserLanguageClient(
   /// Sets up the output channel for the client
   client.onNotification("tmLog", ({ data }) => {
     clientOptions.outputChannel?.append(data);
-    if (
-      typeof data === "string" &&
-      data.includes("[browser-preview-debug]")
-    ) {
-      console.log(data);
-    }
   });
   return client;
 }

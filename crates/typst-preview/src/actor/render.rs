@@ -68,9 +68,6 @@ impl RenderActor {
         log::trace!("RenderActor: received message: {msg:?}");
 
         let res = msg.is_full_render();
-        if res {
-            log::info!("[browser-preview-debug] RenderActor received full render request");
-        }
         match msg {
             RenderActorRequest::EditorResolveSpanRange(span_range) => {
                 log::debug!("RenderActor: resolving EditorResolveSpanRange: {span_range:?}");
@@ -122,22 +119,13 @@ impl RenderActor {
             // otherwise, we render the incremental changes for only once
             let has_full_render = has_full_render;
             log::debug!("RenderActor: has_full_render: {has_full_render}");
-            log::info!("[browser-preview-debug] RenderActor acquiring CompileView read lock");
             let document = {
                 let view_guard = self.view.read();
-                log::info!(
-                    "[browser-preview-debug] RenderActor acquired CompileView read lock has_view={}",
-                    view_guard.is_some()
-                );
                 let Some(view) = view_guard.as_ref() else {
                     log::info!("RenderActor: CompileView is not ready");
                     continue;
                 };
                 let document = view.doc();
-                log::info!(
-                    "[browser-preview-debug] RenderActor document lookup ready={}",
-                    document.is_some()
-                );
                 document
             };
             let Some(document) = document else {
@@ -145,15 +133,7 @@ impl RenderActor {
                 continue;
             };
 
-            log::info!(
-                "[browser-preview-debug] RenderActor starting render full={}",
-                has_full_render
-            );
             let data = self.render(has_full_render, &document);
-            log::info!(
-                "[browser-preview-debug] RenderActor produced frame bytes={}",
-                data.len()
-            );
             let Ok(_) = self.svg_sender.send(data) else {
                 log::info!("RenderActor: svg_sender is dropped");
                 break;
@@ -173,19 +153,9 @@ impl RenderActor {
     #[typst_macros::time]
     fn render_full(&mut self, document: &TypstDocument) -> Vec<u8> {
         let mut renderer = Self::new_renderer();
-        log::info!("[browser-preview-debug] RenderActor starting full-document pack_delta");
         let delta = renderer.pack_delta(document);
-        log::info!(
-            "[browser-preview-debug] RenderActor finished pack_delta bytes={}",
-            delta.len()
-        );
         self.renderer = renderer;
-        log::info!("[browser-preview-debug] RenderActor converting delta to full-current frame");
         let frame = protocol::full_current_frame_from_delta(&delta);
-        log::info!(
-            "[browser-preview-debug] RenderActor full-current conversion complete has_frame={}",
-            frame.is_some()
-        );
         match frame {
             Some(frame) => frame,
             None => {

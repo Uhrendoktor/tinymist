@@ -91,16 +91,6 @@ impl TinymistLanguageServer {
             Ok(p) => p,
             Err(err) => return lsp_err(invalid_params(err)),
         };
-        let is_preview_start = method == "workspace/executeCommand"
-            && params.get("command").and_then(serde_json::Value::as_str)
-                == Some("tinymist.doStartPreview");
-        if is_preview_start {
-            log::info!(
-                "[browser-preview-debug] WASM bridge received preview start request args={:?}",
-                params.get("arguments")
-            );
-        }
-
         let req_id = self.next_request_id();
         let result = {
             let _entered = RUNTIMES.tokio_runtime.handle().enter();
@@ -108,38 +98,13 @@ impl TinymistLanguageServer {
         };
 
         let response = match result {
-            Ok(MaybeDone::Done(Ok(t))) => {
-                if is_preview_start {
-                    log::info!(
-                        "[browser-preview-debug] preview start command completed synchronously: {t:?}"
-                    );
-                }
-                lsp_serialize(&t)
-            }
-            Ok(MaybeDone::Done(Err(err))) => {
-                if is_preview_start {
-                    log::error!(
-                        "[browser-preview-debug] preview start command failed synchronously: {err:?}"
-                    );
-                }
-                lsp_err(err)
-            }
+            Ok(MaybeDone::Done(Ok(t))) => lsp_serialize(&t)
+            Ok(MaybeDone::Done(Err(err))) => lsp_err(err)
             // tokio doesn't get scheduled anymore after returning to js world
             Ok(MaybeDone::Future(fut)) => {
-                if is_preview_start {
-                    log::info!(
-                        "[browser-preview-debug] preview start command returned an async response future"
-                    );
-                }
                 let future = TokioDrivenFuture::new(fut);
                 wasm_bindgen_futures::future_to_promise(async move {
                     let result = future.await;
-                    if is_preview_start {
-                        log::info!(
-                            "[browser-preview-debug] preview start async response completed successfully={}",
-                            result.is_ok()
-                        );
-                    }
                     poll_tokio_background_tasks();
                     Ok(match result {
                         Ok(t) => lsp_serialize(&t),
@@ -153,14 +118,7 @@ impl TinymistLanguageServer {
             //     Err(err) => lsp_err(err),
             // },
             Ok(MaybeDone::Gone) => lsp_err(internal_error("response was weirdly gone")),
-            Err(err) => {
-                if is_preview_start {
-                    log::error!(
-                        "[browser-preview-debug] preview start request rejected before scheduling: {err:?}"
-                    );
-                }
-                lsp_err(err)
-            }
+            Err(err) => lsp_err(err)
         };
         poll_tokio_background_tasks();
         response
