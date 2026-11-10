@@ -5,79 +5,121 @@ import initTomlEdit, { parse as parseToml } from "@rainbowatcher/toml-edit-js";
 
 let tomlReady;
 
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function packageManifestKey(namespace, name, versionSpec, source) {
+  if (source.type === "registry") {
+    return namespace + "/" + name + "@" + versionSpec;
+  }
+  if (source.type === "path") {
+    return namespace + "/" + name + "@path:" + source.path;
+  }
+  return namespace + "/" + name + "@git:" + source.git + "#" +
+    source.refType + ":" + source.ref + ":" + (source.subdirectory || ".");
+}
+
+function normalizePackageSource(name, spec, metadata, namespace) {
+  let source = { type: "registry" };
+  let versionSpec;
+
+  if (typeof spec === "string") {
+    versionSpec = spec;
+    assert.ok(
+      versionSpec === "latest" || /^\d+\.\d+\.\d+$/.test(versionSpec),
+      'package "' + name + '" must use a full version such as "1.2.3" or "latest"',
+    );
+  } else {
+    assert.ok(isRecord(spec), 'package "' + name + '" must be a version string or a source table');
+    const hasPath = spec.path !== undefined;
+    const hasGit = spec.git !== undefined;
+    assert.ok(hasPath !== hasGit, 'package "' + name + '" source table must contain exactly one of "path" or "git"');
+
+    if (hasPath) {
+      assert.equal(typeof spec.path, "string", 'package "' + name + '" path must be a string');
+      assert.ok(spec.path.length > 0, 'package "' + name + '" path must not be empty');
+      source = { type: "path", path: spec.path };
+    } else {
+      assert.equal(typeof spec.git, "string", 'package "' + name + '" git URL must be a string');
+      assert.ok(
+        spec.git.startsWith("https://") || spec.git.startsWith("ssh://") || /^git@[^:]+:/.test(spec.git),
+        'package "' + name + '" git URL must use HTTPS or SSH',
+      );
+      const refs = ["rev", "tag", "branch"].filter((key) => spec[key] !== undefined);
+      assert.equal(refs.length, 1, 'package "' + name + '" git source must specify exactly one of rev, tag, or branch');
+      const refType = refs[0];
+      assert.equal(typeof spec[refType], "string", 'package "' + name + '" git ' + refType + " must be a string");
+      assert.ok(spec[refType].length > 0, 'package "' + name + '" git ' + refType + " must not be empty");
+      const subdirectory = spec.subdirectory ?? ".";
+      assert.equal(typeof subdirectory, "string", 'package "' + name + '" git subdirectory must be a string');
+      assert.ok(!path.isAbsolute(subdirectory), 'package "' + name + '" git subdirectory must be relative');
+      assert.ok(!subdirectory.split(/[\\/]/).includes(".."), 'package "' + name + '" git subdirectory must not contain ".."');
+      source = {
+        type: "git",
+        git: spec.git,
+        refType,
+        ref: spec[refType],
+        subdirectory,
+      };
+    }
+  }
+
+  if (source.type === "registry" && versionSpec === "latest") {
+    assert.equal(namespace, "preview", '"latest" is currently supported only for the Typst Universe preview registry');
+  }
+
+  return {
+    namespace,
+    name,
+    versionSpec,
+    source,
+    manifestKey: packageManifestKey(namespace, name, versionSpec, source),
+    license: metadata.license,
+    licenseFile: metadata.license_file ?? metadata["license-file"],
+    licenseUrl: metadata.license_url ?? metadata["license-url"],
+    url: metadata.url,
+  };
+}
+
 /**
- * Normalize the Cargo-style TOML format into the stable package/font shape
- * consumed by the existing WASM asset packager.
+ * Normalize the package/font manifest into the stable shape used by the
+ * browser asset packager.
  *
- * The [dependencies] declarations use Cargo's real package/version syntax.
- * Typst-specific namespace and exceptional license overrides stay under
- * [package.metadata.tinymist], so they are not invalid Cargo dependency keys.
- * Package licenses are normally discovered from each downloaded typst.toml.
+ * [packages] is intentionally tailored to Typst packages rather than Cargo's
+ * dependency aliases: a package name maps to one version, several versions,
+ * a local directory, or a Git source.
  */
 export function normalizeTomlAssetManifest(document) {
-  assert.ok(document && typeof document === "object", "TOML manifest must be a table");
-  assert.ok(document.package && typeof document.package === "object", "manifest must contain [package] metadata");
+  assert.ok(isRecord(document), "TOML manifest must be a table");
+  assert.ok(isRecord(document.package), "manifest must contain [package] metadata");
 
   const tinymist = document.package.metadata?.tinymist ?? {};
   const dependencyMetadata =
     tinymist.dependency_metadata ?? tinymist["dependency-metadata"] ?? {};
-  const dependencies = document.dependencies ?? {};
+  const declarations = document.packages ?? {};
+
+  assert.ok(
+    isRecord(declarations),
+    "manifest [packages] must be a table",
+  );
+
+  const packages = [];
+  for (const [name, rawSpec] of Object.entries(declarations)) {
+    assert.match(name, /^[A-Za-z0-9][A-Za-z0-9_-]*$/, "invalid Typst package name: " + name);
+    const specs = Array.isArray(rawSpec) ? rawSpec : [rawSpec];
+    assert.ok(specs.length > 0, 'package "' + name + '" must select at least one version or source');
+    const metadata = dependencyMetadata[name] ?? {};
+    assert.ok(isRecord(metadata), "metadata for package " + name + " must be a table");
+    for (const spec of specs) {
+      packages.push(normalizePackageSource(name, spec, metadata, metadata.namespace ?? "preview"));
+    }
+  }
+
   const fonts = tinymist.fonts ?? {};
-
-  assert.ok(
-    dependencies && typeof dependencies === "object" && !Array.isArray(dependencies),
-    "manifest [dependencies] must be a table",
-  );
-  assert.ok(
-    fonts && typeof fonts === "object" && !Array.isArray(fonts),
-    "manifest [package.metadata.tinymist.fonts] must be a table",
-  );
-
-  const packages = Object.entries(dependencies).map(([alias, rawDependency]) => {
-    // Cargo supports both crate = "1.2" and
-    // crate_alias = { package = "crate", version = "=1.2" }.
-    const dependency =
-      typeof rawDependency === "string"
-        ? { package: alias, version: rawDependency }
-        : rawDependency;
-    assert.ok(
-      dependency && typeof dependency === "object" && !Array.isArray(dependency),
-      "dependency " + alias + " must use Cargo dependency syntax",
-    );
-
-    const packageName = dependency.package ?? alias;
-    const versionRequirement = dependency.version;
-    assert.equal(typeof packageName, "string", "dependency " + alias + " must specify a package name");
-    assert.equal(typeof versionRequirement, "string", "dependency " + alias + " must specify a version");
-    assert.match(
-      versionRequirement,
-      /^=[0-9A-Za-z][0-9A-Za-z.+-]*$/,
-      'dependency "' + alias + '" version must be pinned exactly using Cargo syntax, e.g. "=0.5.3"',
-    );
-
-    const metadata = dependencyMetadata[alias] ?? {};
-    assert.ok(
-      metadata && typeof metadata === "object" && !Array.isArray(metadata),
-      "metadata for dependency " + alias + " must be a table",
-    );
-
-    const item = {
-      namespace: metadata.namespace ?? "preview",
-      name: packageName,
-      version: versionRequirement.slice(1),
-      license: metadata.license,
-      licenseFile: metadata.license_file ?? metadata["license-file"],
-      licenseUrl: metadata.license_url ?? metadata["license-url"],
-    };
-    if (metadata.url !== undefined) item.url = metadata.url;
-    return item;
-  });
-
+  assert.ok(isRecord(fonts), "manifest [package.metadata.tinymist.fonts] must be a table");
   const fontAssets = Object.entries(fonts).map(([alias, font]) => {
-    assert.ok(
-      font && typeof font === "object" && !Array.isArray(font),
-      'font "' + alias + '" must be a table',
-    );
+    assert.ok(isRecord(font), 'font "' + alias + '" must be a table');
     return {
       name: font.name ?? alias,
       file: font.file,
@@ -88,8 +130,7 @@ export function normalizeTomlAssetManifest(document) {
   });
 
   const limits = tinymist.limits ?? {};
-  const builtInFonts = tinymist.built_in_fonts ?? tinymist["built-in-fonts"] ?? {};
-  const schemaVersion = tinymist.schema_version ?? tinymist["schema-version"] ?? 1;
+  const schemaVersion = tinymist.schema_version ?? tinymist["schema-version"] ?? 2;
 
   return {
     schemaVersion,
@@ -97,12 +138,6 @@ export function normalizeTomlAssetManifest(document) {
       maxTotalBytes: limits.max_total_bytes ?? limits["max-total-bytes"],
       maxPackageBytes: limits.max_package_bytes ?? limits["max-package-bytes"],
       maxFontBytes: limits.max_font_bytes ?? limits["max-font-bytes"],
-    },
-    builtInFonts: {
-      provider: builtInFonts.provider,
-      defaultTextFont: builtInFonts.default_text_font ?? builtInFonts["default-text-font"],
-      includedFamilies: builtInFonts.included_families ?? builtInFonts["included-families"],
-      note: builtInFonts.note,
     },
     packages,
     fonts: fontAssets,
@@ -122,7 +157,7 @@ export async function parseAssetManifestText(source, extension) {
   assert.equal(
     extension.toLowerCase(),
     ".toml",
-    "asset manifests must use .toml (Cargo-style) or .json format",
+    "asset manifests must use .toml or legacy .json format",
   );
   return normalizeTomlAssetManifest(await parseTomlDocument(source));
 }
