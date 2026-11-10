@@ -17,7 +17,7 @@ test("extracts all license and exception identifiers from an SPDX expression", (
 });
 
 test("rejects malformed SPDX expressions instead of guessing their meaning", () => {
-  assert.throws(() => extractSpdxLicenseIds("MIT Apache-2.0"), /expected SPDX license identifier/);
+  assert.throws(() => extractSpdxLicenseIds("MIT Apache-2.0"), /unexpected token/);
   assert.throws(() => extractSpdxLicenseIds("MIT OR OR Apache-2.0"), /expected SPDX license identifier/);
   assert.throws(() => extractSpdxLicenseIds("(MIT OR Apache-2.0"), /unclosed parenthesis/);
 });
