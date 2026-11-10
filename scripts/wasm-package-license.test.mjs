@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { parseTomlDocument } from "./wasm-assets-manifest.mjs";
 import {
   extractSpdxLicenseIds,
   isSpdxLicensePointer,
@@ -71,4 +72,17 @@ test("requires a declared or explicitly overridden package license", () => {
     () => resolvePackageLicenseMetadata({ package: { name: "example" } }, {}, "preview/example:1.0.0"),
     /has no license in typst.toml/,
   );
+});
+
+test("reads the declared license from a real Typst package manifest", async () => {
+  const manifest = await parseTomlDocument(
+    `[package]
+name = "example"
+version = "1.2.3"
+entrypoint = "lib.typ"
+license = "MIT OR Apache-2.0"
+`,
+  );
+  assert.equal(manifest.package.name, "example");
+  assert.equal(manifest.package.license, "MIT OR Apache-2.0");
 });
