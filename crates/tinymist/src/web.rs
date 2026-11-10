@@ -96,8 +96,7 @@ impl TinymistLanguageServer {
         }
         if method == "tinymist/fsChange" {
             log::info!(
-                "[browser-fs-debug] WASM on_request received tinymist/fsChange params={:?}",
-                js_params
+                "[browser-fs-debug] WASM on_request received tinymist/fsChange params={params:?}"
             );
         }
         let is_preview_start = method == "workspace/executeCommand"

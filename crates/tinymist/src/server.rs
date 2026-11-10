@@ -422,13 +422,14 @@ impl ServerState {
                 "[browser-preview-debug] server received compile interrupt project={project_id:?}"
             );
         }
+        let is_compile_interrupt = matches!(&params, LspInterrupt::Compile(_));
         let Some(ready) = state.ready() else {
             log::info!("interrupted on not ready server");
             return Ok(());
         };
 
         ready.project.interrupt(params);
-        if matches!(params, LspInterrupt::Compile(_)) {
+        if is_compile_interrupt {
             log::info!("[browser-preview-debug] compile interrupt processed by project state");
         }
 
