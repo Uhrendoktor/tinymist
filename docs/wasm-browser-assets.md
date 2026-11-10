@@ -145,8 +145,8 @@ both available on PATH; the script checks those exact versions before building.
 The script installs the repository's JavaScript dependencies, adds the
 `wasm32-unknown-unknown` Rust target if it is missing, and builds/packages the
 browser VSIX. It does not need a fork, GitHub token, workflow dispatch, or
-self-hosted runner. Rust/rustup, Node.js 24+, npm, and the usual native build
-tools must be installed.
+self-hosted runner. Rust/rustup, Node.js 20.11 or newer (Node.js 24 is used in
+CI), npm, and the usual native build tools must be installed.
 
 The output argument is optional. Without it, the VSIX is written to the normal
 `dist/tinymist-web-<version>.vsix` path.
@@ -163,9 +163,10 @@ node scripts/build-browser.mjs \
   --update-lock
 ```
 
-The lock records the exact package archive digest, the license expression
-read from `typst.toml`, each notice source, and the SHA-256 digest of every
-notice text. This includes texts retrieved from the SPDX License List when a
+The lock records each package source digest (the downloaded archive for
+registry packages, or a deterministic directory-content hash for local and
+Git packages), the license expression read from `typst.toml`, each notice
+source, and the SHA-256 digest of every notice text. This includes texts retrieved from the SPDX License List when a
 package's `LICENSE` file is only an SPDX pointer. Font bytes and font license
 notices are locked in the same way. Review and retain both your TOML manifest
 and its generated lock file.
