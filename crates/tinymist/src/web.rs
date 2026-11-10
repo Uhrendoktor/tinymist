@@ -330,12 +330,9 @@ fn poll_tokio_background_tasks_traced() {
 fn poll_tokio_background_tasks_inner(trace_yields: bool) {
     #[cfg(target_arch = "wasm32")]
     {
-        static POLL_ID: std::sync::atomic::AtomicUsize =
-            std::sync::atomic::AtomicUsize::new(0);
+        static POLL_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let poll_id = POLL_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        log::info!(
-            "[browser-fs-debug] runtime poll {poll_id} entered traced={trace_yields}"
-        );
+        log::info!("[browser-fs-debug] runtime poll {poll_id} entered traced={trace_yields}");
         RUNTIMES.tokio_runtime.block_on(async {
             for iteration in 0..64 {
                 if trace_yields {
@@ -345,15 +342,11 @@ fn poll_tokio_background_tasks_inner(trace_yields: bool) {
                 }
                 tokio::task::yield_now().await;
                 if trace_yields {
-                    log::info!(
-                        "[browser-fs-debug] runtime poll {poll_id} after yield {iteration}"
-                    );
+                    log::info!("[browser-fs-debug] runtime poll {poll_id} after yield {iteration}");
                 }
             }
         });
-        log::info!(
-            "[browser-fs-debug] runtime poll {poll_id} completed traced={trace_yields}"
-        );
+        log::info!("[browser-fs-debug] runtime poll {poll_id} completed traced={trace_yields}");
     }
 }
 
