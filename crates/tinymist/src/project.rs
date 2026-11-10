@@ -484,6 +484,9 @@ pub trait ProjectClient: Send + Sync + 'static {
     /// Sends a dev event to the client, used for neovim's E2E testing.
     #[cfg(feature = "export")]
     fn dev_event(&self, event: DevEvent);
+    /// Sends an automatically generated browser export to the editor host.
+    #[cfg(feature = "export")]
+    fn browser_export_task_result(&self, event: BrowserExportTaskResult);
 }
 
 impl ProjectClient for LspClient {
@@ -499,6 +502,11 @@ impl ProjectClient for LspClient {
     #[cfg(feature = "export")]
     fn dev_event(&self, event: DevEvent) {
         self.send_notification::<DevEvent>(&event);
+    }
+
+    #[cfg(feature = "export")]
+    fn browser_export_task_result(&self, event: BrowserExportTaskResult) {
+        self.send_notification::<BrowserExportTaskResult>(&event);
     }
 }
 
@@ -516,6 +524,13 @@ impl ProjectClient for mpsc::UnboundedSender<LspInterrupt> {
     fn dev_event(&self, _event: DevEvent) {
         log::warn!(
             "ProjectClient: dev_event is not implemented for mpsc::UnboundedSender<LspInterrupt>"
+        );
+    }
+
+    #[cfg(feature = "export")]
+    fn browser_export_task_result(&self, _event: BrowserExportTaskResult) {
+        log::warn!(
+            "ProjectClient: browser_export_task_result is not implemented for mpsc::UnboundedSender<LspInterrupt>"
         );
     }
 }
@@ -820,5 +835,26 @@ pub enum DevEvent {
 
 impl lsp_types::notification::Notification for DevEvent {
     const METHOD: &'static str = "tinymist/devEvent";
+    type Params = Self;
+}
+
+/// Result bytes from a browser automatic export task. The language server
+/// cannot write to the browser workspace filesystem, so the extension host
+/// persists this payload through the originating VS Code filesystem provider.
+#[cfg(feature = "export")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserExportTaskResult {
+    /// Canonical source path used to resolve the workspace filesystem provider.
+    pub source_path: String,
+    /// Resolved output path, or an absent path to use the source file's default.
+    pub path: Option<String>,
+    /// Base64-encoded exported artifact.
+    pub data: String,
+}
+
+#[cfg(feature = "export")]
+impl lsp_types::notification::Notification for BrowserExportTaskResult {
+    const METHOD: &'static str = "tinymist/browserExportTaskResult";
     type Params = Self;
 }
