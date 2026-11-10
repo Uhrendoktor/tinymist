@@ -353,7 +353,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check --all
       - name: Test browser previewer selection
-        run: yarn workspace tinymist test:unit run src/features/previewer-provider-selection.test.ts
+        run: yarn workspace tinymist test:unit run src/features/previewer-provider-selection.test.ts src/web/bridge-queue.test.ts
       - name: Build and package browser-only Tinymist
         run: yarn package:vscode:web
 
