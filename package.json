@@ -59,7 +59,7 @@
     "draft-release": "node scripts/draft-release.mjs",
     "package:vscode:web": "node scripts/build.mjs package:vscode:web",
     "build:browser": "node scripts/build-browser.mjs",
-    "test:wasm-assets": "node --test scripts/wasm-assets-manifest.test.mjs scripts/wasm-package-license.test.mjs"
+    "test:wasm-assets": "node --test scripts/wasm-assets-manifest.test.mjs scripts/wasm-package-license.test.mjs scripts/wasm-package-source.test.mjs"
   },
   "dependencies": {},
   "devDependencies": {
