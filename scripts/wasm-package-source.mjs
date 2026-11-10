@@ -87,9 +87,9 @@ export async function copyPackageDirectory(sourceDirectory, destinationDirectory
   return { sha256: hash.digest("hex"), bytes: totalBytes };
 }
 
-export function checkoutGitPackage(source, requestedCommit, destinationDirectory) {
+export async function checkoutGitPackage(source, requestedCommit, destinationDirectory) {
   const repositoryDirectory = destinationDirectory + "-repository";
-  fs.mkdir(repositoryDirectory, { recursive: true });
+  await fs.mkdir(repositoryDirectory, { recursive: true });
   execFileSync("git", ["init", "-q", repositoryDirectory], { stdio: "inherit" });
   const git = (args) => execFileSync("git", args, {
     cwd: repositoryDirectory,
