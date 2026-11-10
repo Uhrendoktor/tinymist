@@ -1,5 +1,6 @@
-# Cargo-compatible dependency declarations for browser-embedded Typst assets.
-# Package namespace defaults to preview. Licenses are discovered from each package's typst.toml and LICENSE archive file.
+# Typst packages are selected by their actual names below.
+# Use one version, a list of versions, "latest", a local path, or a Git source.
+# Built-in Typst fonts are embedded by the Tinymist web Cargo feature; no extra font entry is needed for them.
 
 [package]
 name = "tinymist-browser-assets"
@@ -8,44 +9,42 @@ edition = "2021"
 publish = false
 
 [package.metadata.tinymist]
-schema-version = 1
+schema-version = 2
 
 [package.metadata.tinymist.limits]
 max-total-bytes = 157286400
 max-package-bytes = 67108864
 max-font-bytes = 33554432
 
-[package.metadata.tinymist.built-in-fonts]
-provider = "Typst typst-assets"
-default-text-font = "Libertinus Serif"
-included-families = ["Libertinus Serif", "New Computer Modern", "New Computer Modern Math", "DejaVu Sans Mono"]
-note = "Already embedded by Typst; not downloaded again as external assets."
+[packages]
+cetz-plot = "0.1.4"
+cetz = ["0.3.4", "0.5.2", "0.5.3"]
+codly-languages = "0.1.10"
+codly = "2.0.0"
+ctheorems = "2.0.0"
+elembic = "1.1.1"
+fletcher = "0.5.8"
+glossarium = "0.5.10"
+hydra = "0.6.3"
+kalt = "0.1.1"
+lilaq = "0.6.0"
+lovelace = "0.3.1"
+oxifmt = ["0.2.1", "1.0.0"]
+physica = "0.9.8"
+quill = "0.8.0"
+sertyp = "0.1.5"
+showybox = "2.0.4"
+tidy = "0.4.1"
+tiptoe = "0.4.0"
+touying = "0.8.0"
+unify = "0.8.1"
+uniwarn = "0.1.1"
+zero = ["0.6.1", "0.7.1"]
 
-[dependencies]
-cetz_plot = { package = "cetz-plot", version = "=0.1.4" }
-cetz_0_3_4 = { package = "cetz", version = "=0.3.4" }
-cetz_0_5_2 = { package = "cetz", version = "=0.5.2" }
-cetz_0_5_3 = { package = "cetz", version = "=0.5.3" }
-codly_languages = { package = "codly-languages", version = "=0.1.10" }
-codly = { package = "codly", version = "=2.0.0" }
-ctheorems = { package = "ctheorems", version = "=2.0.0" }
-elembic = { package = "elembic", version = "=1.1.1" }
-fletcher = { package = "fletcher", version = "=0.5.8" }
-glossarium = { package = "glossarium", version = "=0.5.10" }
-hydra = { package = "hydra", version = "=0.6.3" }
-kalt = { package = "kalt", version = "=0.1.1" }
-lilaq = { package = "lilaq", version = "=0.6.0" }
-lovelace = { package = "lovelace", version = "=0.3.1" }
-oxifmt_0_2_1 = { package = "oxifmt", version = "=0.2.1" }
-oxifmt_1_0_0 = { package = "oxifmt", version = "=1.0.0" }
-physica = { package = "physica", version = "=0.9.8" }
-quill = { package = "quill", version = "=0.8.0" }
-sertyp = { package = "sertyp", version = "=0.1.5" }
-showybox = { package = "showybox", version = "=2.0.4" }
-tidy = { package = "tidy", version = "=0.4.1" }
-tiptoe = { package = "tiptoe", version = "=0.4.0" }
-touying = { package = "touying", version = "=0.8.0" }
-unify = { package = "unify", version = "=0.8.1" }
-uniwarn = { package = "uniwarn", version = "=0.1.1" }
-zero_0_6_1 = { package = "zero", version = "=0.6.1" }
-zero_0_7_1 = { package = "zero", version = "=0.7.1" }
+# Example local package:
+# my-local-package = { path = "../my-local-package", namespace = "local" }
+
+# Example Git package (pin rev to a commit for reproducible source):
+# my-git-package = { git = "https://github.com/example/my-git-package.git", rev = "0123456789abcdef0123456789abcdef01234567", subdirectory = "typst-package", namespace = "local" }
+
+# Add extra fonts only under [package.metadata.tinymist.fonts.<name>].
