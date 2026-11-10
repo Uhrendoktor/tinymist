@@ -9,7 +9,7 @@ const SPDX_OPERATORS = new Set(["AND", "OR", "WITH"]);
  */
 export function extractSpdxLicenseIds(expression) {
   assert.equal(typeof expression, "string", "package license must be an SPDX expression");
-  const compact = expression.replace(/\\s+/g, "");
+  const compact = expression.replace(/\s+/g, "");
   const tokens = expression.match(/[A-Za-z0-9.+-]+|[()]/g) ?? [];
   assert.ok(tokens.length > 0 && tokens.join("") === compact, "unsupported SPDX license expression: " + expression);
 
@@ -28,8 +28,8 @@ export function extractSpdxLicenseIds(expression) {
  * resolved to their canonical texts.
  */
 export function isSpdxLicensePointer(text, expression) {
-  const normalizedText = String(text).replace(/\\r\\n/g, "\\n").trim().replace(/\\s+/g, " ");
-  const normalizedExpression = String(expression).trim().replace(/\\s+/g, " ");
+  const normalizedText = String(text).replace(/\r\n/g, "\n").trim().replace(/\s+/g, " ");
+  const normalizedExpression = String(expression).trim().replace(/\s+/g, " ");
   if (normalizedText === normalizedExpression) return true;
 
   return normalizedText.length <= 160 &&
