@@ -36,6 +36,9 @@ type PreviewSvgPaintMetrics = {
   nonWhitePaintElementCount: number;
   darkPaintElementCount: number;
   bluePaintElementCount: number;
+  paintedGlyphElementCount: number;
+  darkTextGlyphElementCount: number;
+  blueTextGlyphElementCount: number;
   paintSamples: string[];
 };
 
@@ -86,6 +89,9 @@ function measurePreviewSvgPaint(svg: SVGSVGElement): PreviewSvgPaintMetrics {
   let nonWhitePaintElementCount = 0;
   let darkPaintElementCount = 0;
   let bluePaintElementCount = 0;
+  let paintedGlyphElementCount = 0;
+  let darkTextGlyphElementCount = 0;
+  let blueTextGlyphElementCount = 0;
   const paintSamples: string[] = [];
 
   const readColor = (color: string, opacity: string): [number, number, number] | undefined => {
@@ -161,6 +167,19 @@ function measurePreviewSvgPaint(svg: SVGSVGElement): PreviewSvgPaintMetrics {
       bluePaintElementCount += 1;
     }
 
+    // Typst emits each text glyph as an SVG <use> that references a path in
+    // <defs>. Ignore page/background rectangles here: they can be black even
+    // when the document's actual text frames are empty.
+    if (node.tagName.toLowerCase() === "use" && hasNonWhitePaint) {
+      paintedGlyphElementCount += 1;
+      if (hasDarkPaint) {
+        darkTextGlyphElementCount += 1;
+      }
+      if (hasBluePaint) {
+        blueTextGlyphElementCount += 1;
+      }
+    }
+
     if (paintSamples.length < 20) {
       paintSamples.push(
         `${node.tagName.toLowerCase()}.${node.getAttribute("class") || ""}:fill=${style.fill}:stroke=${style.stroke}:bbox=${box.width.toFixed(2)}x${box.height.toFixed(2)}`,
@@ -177,6 +196,9 @@ function measurePreviewSvgPaint(svg: SVGSVGElement): PreviewSvgPaintMetrics {
     nonWhitePaintElementCount,
     darkPaintElementCount,
     bluePaintElementCount,
+    paintedGlyphElementCount,
+    darkTextGlyphElementCount,
+    blueTextGlyphElementCount,
     paintSamples,
   };
 }
@@ -688,6 +710,12 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
                   renderRootWidth: 0,
                   renderRootHeight: 0,
                   nonWhitePaintElementCount: 0,
+                  darkPaintElementCount: 0,
+                  bluePaintElementCount: 0,
+                  paintedGlyphElementCount: 0,
+                  darkTextGlyphElementCount: 0,
+                  blueTextGlyphElementCount: 0,
+                  pageCount: 0,
                   paintSamples: [],
                 };
 
@@ -727,6 +755,12 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
                 renderRootWidth: 0,
                 renderRootHeight: 0,
                 nonWhitePaintElementCount: 0,
+                darkPaintElementCount: 0,
+                bluePaintElementCount: 0,
+                paintedGlyphElementCount: 0,
+                darkTextGlyphElementCount: 0,
+                blueTextGlyphElementCount: 0,
+                pageCount: 0,
                 paintSamples: [],
                 renderError: error instanceof Error ? error.message : String(error),
               },
