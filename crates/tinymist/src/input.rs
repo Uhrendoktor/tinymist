@@ -140,62 +140,30 @@ impl ServerState {
         let mut removes = vec![];
 
         for change in params.inserts {
-            log::info!("[browser-fs-debug] fs_change parsing URI {:?}", change.uri);
-            let uri = Url::parse(&change.uri).unwrap();
-            log::info!("[browser-fs-debug] fs_change parsed URI {uri:?}");
-            let path: ImmutPath = tinymist_query::url_to_path(&uri).into();
-            log::info!("[browser-fs-debug] fs_change converted path {path:?}");
+            let path: ImmutPath =
+                tinymist_query::url_to_path(&Url::parse(&change.uri).unwrap()).into();
             let content: FileResult<Bytes> = match change.content {
-                FileChangeResult::Ok { content } => {
-                    log::info!(
-                        "[browser-fs-debug] fs_change decoding base64 content length={}",
-                        content.len()
-                    );
-                    let decoded = base64::engine::general_purpose::STANDARD.decode(content);
-                    log::info!(
-                        "[browser-fs-debug] fs_change base64 decoded successfully={}",
-                        decoded.is_ok()
-                    );
-                    decoded.map(Bytes::new).map_err(|e| {
-                        FileError::Other(Some(_eco_format!("base64 decode error: {e}")))
-                    })
-                }
+                FileChangeResult::Ok { content } => base64::engine::general_purpose::STANDARD
+                    .decode(content)
+                    .map(Bytes::new)
+                    .map_err(|e| FileError::Other(Some(_eco_format!("base64 decode error: {e}")))),
                 FileChangeResult::Err { error } => {
                     log::info!("file content not available: {path:?} {error}");
                     Err(FileError::Other(Some(error)))
                 }
             };
-            log::info!("[browser-fs-debug] fs_change converted file result for {path:?}");
             inserts.push((path, content.into()));
-            log::info!("[browser-fs-debug] fs_change queued converted insert");
         }
 
-        log::info!(
-            "[browser-fs-debug] fs_change finished insert loop inserts={}",
-            inserts.len()
-        );
         for path in params.removes {
             removes.push(tinymist_query::url_to_path(&Url::parse(&path).unwrap()).into());
         }
-        log::info!(
-            "[browser-fs-debug] fs_change finished removals loop removes={}",
-            removes.len()
-        );
 
-        let changeset = FileChangeSet { inserts, removes };
-        log::info!("[browser-fs-debug] fs_change created FileChangeSet");
-        let update = FilesystemEvent::Update(changeset, params.is_sync);
-        log::info!("[browser-fs-debug] fs_change created FilesystemEvent");
-        let update_debug = format!("{update:?}");
-        log::info!("[browser-fs-debug] fs_change formatted FilesystemEvent debug");
-        log::info!("fs_change: {update_debug}");
-        log::info!("[browser-fs-debug] fs_change before project interrupt");
+        let update = FilesystemEvent::Update(FileChangeSet { inserts, removes }, params.is_sync);
+        log::info!("fs_change: {update:?}");
         self.project.interrupt(Interrupt::Fs(update));
-        log::info!("[browser-fs-debug] fs_change after project interrupt");
-        log::info!("[browser-fs-debug] fs_change before schedule_async");
 
         self.schedule_async();
-        log::info!("[browser-fs-debug] fs_change after schedule_async");
         just_ok(serde_json::Value::Null)
     }
 }
