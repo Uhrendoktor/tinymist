@@ -16,7 +16,7 @@ function usage() {
     "Build a browser-only Tinymist VSIX locally, without GitHub Actions or a fork.",
     "",
     "Options:",
-    "  --manifest <path>  Cargo-style TOML asset manifest (default: wasm-assets.toml)",
+    "  --manifest <path>  Typst package/font TOML asset manifest (default: wasm-assets.toml)",
     "  --output <path>    Destination VSIX path (default: dist/tinymist-web-<version>.vsix)",
     "  --update-lock      Regenerate the manifest's adjacent SHA-256 lock before building",
     "  --help             Show this help",
