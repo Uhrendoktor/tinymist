@@ -4,75 +4,111 @@ The browser VSIX can bundle Typst packages and extra licensed fonts directly
 into its WebAssembly module. The browser runtime never downloads packages or
 fonts and has no ambient filesystem or network access.
 
-## Dependency manifest
+## Package manifest
 
-Use `wasm-assets.toml`, which uses the familiar Cargo.toml layout. Package
-versions are exact Cargo requirements (the leading `=` is intentional).
-Normal Cargo dependency aliases let you include multiple versions of the same
-Typst package.
+The `[packages]` table is intentionally keyed by the actual Typst package
+name. There are no dependency aliases and no Cargo-style `=` prefix.
 
-For normal Typst Universe packages, **you do not need to declare a license or
-license URL for every dependency**. The bundler reads the package's own
-`typst.toml` file and obtains the `[package].license` SPDX expression. It
-also takes the package's `LICENSE` file from the same downloaded archive. If
-that file contains only a short SPDX expression (for example,
-`MIT OR Apache-2.0`), the bundler retrieves the corresponding canonical
-license texts from the SPDX License List. The resolved expression, notice
-sources, and SHA-256 checksums are written into the lock file.
-
-A normal manifest can therefore be as small as:
+Use a plain version for one published version, an array for several versions,
+or `"latest"` when the newest published version should be selected on the next
+lock update:
 
 ```toml
-[package]
-name = "tinymist-browser-assets"
-version = "0.1.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-cetz = "=0.5.3"
-cetz_0_3_4 = { package = "cetz", version = "=0.3.4" }
-oxifmt = "=1.0.0"
-
-[package.metadata.tinymist.limits]
-max-total-bytes = 157286400
-max-package-bytes = 67108864
-max-font-bytes = 33554432
+[packages]
+cetz = ["0.3.4", "0.5.3"]
+zero = ["0.6.1", "0.7.1"]
+codly = "2.0.0"
+fletcher = "latest"
 ```
 
-The package namespace defaults to `preview`. If you use a package from another
-namespace, or a custom archive URL, set only those exceptional details:
+Typst imports still need an exact version. Accordingly, `latest` is a
+build-time selector: `--update-lock` queries the Typst Universe package index,
+selects the highest published version and records that concrete version and
+archive checksum. Normal locked builds reuse that version from the lock and do
+not re-resolve `latest`. Run `--update-lock` deliberately when you want to
+refresh it.
+
+### Local package directories
+
+Use `path` for a package already on disk. Paths are resolved relative to the
+manifest file. The source directory must contain the package's `typst.toml`
+and the files it needs:
 
 ```toml
-[package.metadata.tinymist.dependency-metadata.my_local_package]
-namespace = "local"
-url = "https://example.org/packages/my-local-package-1.2.3.tar.gz"
+[packages]
+my-local-package = { path = "../my-local-package", namespace = "local" }
 ```
 
-A non-registry package normally should also contain a `typst.toml` manifest
-with a `[package].license` SPDX expression and a `LICENSE` file. For an
-exceptional package that does not provide those standard files, you can
-explicitly override the license metadata:
+The package's name and version are read from `typst.toml`. For local sources,
+the bundler copies regular files into the build, excludes the `.git`
+directory, rejects symlinks, and records a deterministic content hash in the
+lock. Use `namespace = "preview"` when the package is imported from
+`@preview`; `local` is convenient for packages imported from `@local`.
+
+You can select more than one local version in the same package entry by using
+an array of source tables:
 
 ```toml
-[package.metadata.tinymist.dependency-metadata.my_local_package]
-license = "MIT"
-license-file = "LICENSES/NOTICE"
-# Or provide an HTTPS URL when the notice is not present in the archive:
-# license-url = "https://example.org/my-local-package/LICENSE"
+[packages]
+my-local-package = [
+  { path = "../my-local-package-1", namespace = "local" },
+  { path = "../my-local-package-2", namespace = "local" },
+]
 ```
 
-Do not add per-package metadata tables unless you actually need an override.
-The package name itself does **not** imply a license; the declaration comes
-from the package manifest and the bundled notice is taken from the archive or
-an SPDX canonical text.
+### Git repositories
+
+Use `git` with exactly one of `rev`, `tag`, or `branch`. The optional
+`subdirectory` selects a package below the repository root. For fully
+reproducible configuration, prefer a full commit ID in `rev`:
+
+```toml
+[packages]
+my-git-package = {
+  git = "https://github.com/example/typst-package.git",
+  rev = "0123456789abcdef0123456789abcdef01234567",
+  subdirectory = "packages/my-git-package",
+  namespace = "local",
+}
+```
+
+Tags and branches are also accepted. When the lock is updated, the bundler
+resolves the selected ref to a commit ID and records it. Locked builds fetch
+that commit, rather than following a moving branch or tag. Multiple versions
+or sources of the same package can be combined in an array:
+
+```toml
+[packages]
+my-git-package = [
+  "1.0.0",
+  { git = "https://github.com/example/typst-package.git", tag = "v2.0.0" },
+]
+```
+
+### Package licenses
+
+For published Typst Universe packages, **you do not need to declare a license
+or license URL for every dependency**. The bundler reads the SPDX expression
+from the package's `typst.toml` and uses the `LICENSE` file from the same
+archive. If that file is only an SPDX pointer (for example,
+`MIT OR Apache-2.0`), the bundler retrieves the canonical license texts for
+each identifier.
+
+The resolved expression, notice sources, and SHA-256 checksums are written to
+the lock. The same automatic license discovery is used for local and Git
+sources when they contain a normal Typst package manifest and `LICENSE` file.
+
+Use `[package.metadata.tinymist.dependency-metadata.<package-name>]` only for
+exceptional packages that need a custom namespace/archive URL, an explicit
+license override, or a non-standard license notice source. The package name
+itself does not imply a license.
 
 ## Extra fonts
 
-The Typst built-in text fonts are already included by the
-`tinymist-project/web` Cargo feature. Add a
-`[package.metadata.tinymist.fonts.<name>]` table only for additional fonts
-you need. Unlike Typst packages, a font file does not have a standard
+Typst's built-in fonts are compiled into the web build by the
+`tinymist-project/web` Cargo feature. They require no manifest entry. Add a
+`[package.metadata.tinymist.fonts.<name>]` table only for fonts outside that
+built-in set. Unlike Typst packages, a font file has no standard
 `typst.toml` manifest, so its redistribution license and notice source still
 need to be supplied explicitly.
 
@@ -85,8 +121,7 @@ license-url = "https://example.org/fonts/OFL.txt"
 ```
 
 Only bundle fonts whose licenses permit redistribution in an embedded
-application. The example names and URLs are illustrative; use the actual
-font download URL and license text for your font.
+application. Use the actual font download URL and license text for your font.
 
 ## Build locally (no fork or GitHub Actions required)
 
