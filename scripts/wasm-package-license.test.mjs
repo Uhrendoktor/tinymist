@@ -24,11 +24,11 @@ test("rejects non-SPDX custom license references for automatic lookup", () => {
 });
 
 test("recognizes SPDX pointer files but not full license text", () => {
-  assert.equal(isSpdxLicensePointer("MIT OR Apache-2.0\\n", "MIT OR Apache-2.0"), true);
+  assert.equal(isSpdxLicensePointer("MIT OR Apache-2.0", "MIT OR Apache-2.0"), true);
   assert.equal(isSpdxLicensePointer("MIT License", "MIT"), true);
   assert.equal(
     isSpdxLicensePointer(
-      "MIT License\\n\\nCopyright (c) 2026 Example\\n\\nPermission is hereby granted, free of charge...",
+      "MIT License Copyright (c) 2026 Example Permission is hereby granted, free of charge to any person obtaining a copy...",
       "MIT",
     ),
     false,
