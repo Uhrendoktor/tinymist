@@ -35,7 +35,10 @@ type PreviewTask = {
     renderMode: string;
     renderRootWidth: number;
     renderRootHeight: number;
+    pageCount: number;
     nonWhitePaintElementCount: number;
+    darkPaintElementCount: number;
+    bluePaintElementCount: number;
     paintSamples: string[];
     renderError?: string;
   };
@@ -443,11 +446,17 @@ export async function run(): Promise<void> {
         compileErrors.map((item) => item.message),
       )}`,
     );
+    console.log(
+      "Exact user fixture SVG paint metrics:",
+      JSON.stringify(secondRenderedTask.renderMetrics),
+    );
     assert(
       secondRenderedTask.renderMetrics!.visibleSvgCount > 0 &&
         secondRenderedTask.renderMetrics!.visibleContentElementCount > 0 &&
-        secondRenderedTask.renderMetrics!.nonWhitePaintElementCount > 0,
-      `Second preview rendered no visible painted page content: ${JSON.stringify(secondRenderedTask.renderMetrics)}`,
+        secondRenderedTask.renderMetrics!.pageCount >= 2 &&
+        secondRenderedTask.renderMetrics!.bluePaintElementCount > 0 &&
+        secondRenderedTask.renderMetrics!.darkPaintElementCount > 0,
+      `Exact user fixture is missing blue text, default dark text, or its second page: ${JSON.stringify(secondRenderedTask.renderMetrics)}`,
     );
 
     await waitFor("two isolated browser preview tasks", async () => {
