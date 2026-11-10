@@ -11,11 +11,16 @@ versions are exact Cargo requirements (the leading `=` is intentional).
 Normal Cargo dependency aliases let you include multiple versions of the same
 Typst package.
 
-The actual dependencies stay valid Cargo declarations. Typst-specific details
-that Cargo does not understand—namespace, license and optional archive URL—are
-stored under `[package.metadata.tinymist.dependency-metadata.<alias>]`.
+For normal Typst Universe packages, **you do not need to declare a license or
+license URL for every dependency**. The bundler reads the package's own
+`typst.toml` file and obtains the `[package].license` SPDX expression. It
+also takes the package's `LICENSE` file from the same downloaded archive. If
+that file contains only a short SPDX expression (for example,
+`MIT OR Apache-2.0`), the bundler retrieves the corresponding canonical
+license texts from the SPDX License List. The resolved expression, notice
+sources, and SHA-256 checksums are written into the lock file.
 
-For example:
+A normal manifest can therefore be as small as:
 
 ```toml
 [package]
@@ -25,39 +30,63 @@ edition = "2021"
 publish = false
 
 [dependencies]
+cetz = "=0.5.3"
 cetz_0_3_4 = { package = "cetz", version = "=0.3.4" }
-cetz_0_5_3 = { package = "cetz", version = "=0.5.3" }
-
-[package.metadata.tinymist.dependency-metadata.cetz_0_3_4]
-namespace = "preview"
-license = "MIT"
-license-url = "https://example.invalid/cetz/LICENSE"
-
-[package.metadata.tinymist.dependency-metadata.cetz_0_5_3]
-namespace = "preview"
-license = "MIT"
-license-url = "https://example.invalid/cetz/LICENSE"
+oxifmt = "=1.0.0"
 
 [package.metadata.tinymist.limits]
 max-total-bytes = 157286400
 max-package-bytes = 67108864
 max-font-bytes = 33554432
-
-[package.metadata.tinymist.fonts.ExampleFontRegular]
-file = "ExampleFont-Regular.ttf"
-url = "https://example.invalid/fonts/ExampleFont-Regular.ttf"
-license = "SIL OFL 1.1"
-license-url = "https://example.invalid/fonts/OFL.txt"
 ```
 
-The example versions and URLs are illustrative. Verify package availability and
-redistribution rights before adding assets. Do not bundle a font unless its
-license permits redistribution in an embedded application.
+The package namespace defaults to `preview`. If you use a package from another
+namespace, or a custom archive URL, set only those exceptional details:
 
-The default manifest contains 27 pinned Typst package versions. The Typst
-built-in text fonts are already included by the `tinymist-project/web` Cargo
-feature; add a `[package.metadata.tinymist.fonts.<name>]` table only for
-additional fonts you need.
+```toml
+[package.metadata.tinymist.dependency-metadata.my_local_package]
+namespace = "local"
+url = "https://example.org/packages/my-local-package-1.2.3.tar.gz"
+```
+
+A non-registry package normally should also contain a `typst.toml` manifest
+with a `[package].license` SPDX expression and a `LICENSE` file. For an
+exceptional package that does not provide those standard files, you can
+explicitly override the license metadata:
+
+```toml
+[package.metadata.tinymist.dependency-metadata.my_local_package]
+license = "MIT"
+license-file = "LICENSES/NOTICE"
+# Or provide an HTTPS URL when the notice is not present in the archive:
+# license-url = "https://example.org/my-local-package/LICENSE"
+```
+
+Do not add per-package metadata tables unless you actually need an override.
+The package name itself does **not** imply a license; the declaration comes
+from the package manifest and the bundled notice is taken from the archive or
+an SPDX canonical text.
+
+## Extra fonts
+
+The Typst built-in text fonts are already included by the
+`tinymist-project/web` Cargo feature. Add a
+`[package.metadata.tinymist.fonts.<name>]` table only for additional fonts
+you need. Unlike Typst packages, a font file does not have a standard
+`typst.toml` manifest, so its redistribution license and notice source still
+need to be supplied explicitly.
+
+```toml
+[package.metadata.tinymist.fonts.ExampleFontRegular]
+file = "ExampleFont-Regular.ttf"
+url = "https://example.org/fonts/ExampleFont-Regular.ttf"
+license = "SIL OFL 1.1"
+license-url = "https://example.org/fonts/OFL.txt"
+```
+
+Only bundle fonts whose licenses permit redistribution in an embedded
+application. The example names and URLs are illustrative; use the actual
+font download URL and license text for your font.
 
 ## Build locally (no fork or GitHub Actions required)
 
@@ -67,8 +96,8 @@ then run the browser build script:
 ```sh
 git clone https://github.com/Uhrendoktor/tinymist.git
 cd tinymist
-node scripts/build-browser.mjs \
-  --manifest /absolute/path/to/my-wasm-assets.toml \
+node scripts/build-browser.mjs \\
+  --manifest /absolute/path/to/my-wasm-assets.toml \\
   --output ./dist/tinymist-web-custom.vsix
 ```
 
@@ -93,20 +122,24 @@ Each manifest has an adjacent `.lock.json` file. Generate or update it on a
 trusted machine:
 
 ```sh
-node scripts/bundle-wasm-assets.mjs \
-  --manifest /absolute/path/to/my-wasm-assets.toml \
+node scripts/build-browser.mjs \\
+  --manifest /absolute/path/to/my-wasm-assets.toml \\
+  --output ./dist/tinymist-web-custom.vsix \\
   --update-lock
 ```
 
-Review and retain both your TOML manifest and its generated lock file. Normal
-builds use locked mode: downloaded package archives, font bytes and license
-notices are checked against SHA-256 digests. Missing or mismatched entries fail
-the build. The local build helper accepts `--update-lock` when you explicitly
-want to regenerate the lock and then build:
+The lock records the exact package archive digest, the license expression
+read from `typst.toml`, each notice source, and the SHA-256 digest of every
+notice text. This includes texts retrieved from the SPDX License List when a
+package's `LICENSE` file is only an SPDX pointer. Font bytes and font license
+notices are locked in the same way. Review and retain both your TOML manifest
+and its generated lock file.
 
-```sh
-node scripts/build-browser.mjs --manifest ./wasm-assets.toml --update-lock
-```
+Use `--update-lock` after changing packages, versions, fonts, or explicit
+license overrides. For ordinary repeat builds, omit that flag: locked mode
+verifies the downloaded package/font bytes and license notices against the
+committed lock. An unexpected change fails the build instead of silently
+changing the bundled notices.
 
 A custom manifest and its lock may live outside the repository. This is useful
 for personal builds and CI systems that consume the public source without
@@ -130,6 +163,9 @@ maintaining a fork.
   Bundle export, which require host services unavailable in the browser WASM
   runtime. Integrated Webview preview and in-memory exports remain available.
 
-The packager scans imported `.typ` files in bundled packages. If one imports a
-versioned package not listed in the manifest, asset bundling fails and names the
-missing dependency. Add that exact version under `[dependencies]`.
+**License metadata is not a legal audit.** Typst's package manifest supplies
+the package author's declared SPDX expression, not proof that every file or
+third-party asset in the archive is covered by that same license. Review the
+package README and licensing notes for file-level exceptions before
+redistributing a bundle. If a package uses different licenses for different
+files, or has a custom `LicenseRef`, provide and review an explicit override.
