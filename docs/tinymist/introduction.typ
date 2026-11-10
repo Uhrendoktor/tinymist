@@ -44,11 +44,11 @@ This fork is not an upstream contribution branch. Do not merge this fork's main 
 
 == Why this library exists
 
-The browser build is designed to be a **standalone Typst compiler package** for environments where a normal extension cannot download packages or fonts at runtime. This is useful for locked-down company machines, restricted networks, and offline workstations.
+The browser build is designed to be a standalone Typst compiler package for environments where a normal extension cannot download packages or fonts at runtime. This is useful for locked-down company machines, restricted networks, and offline workstations.
 
 The Typst packages and extra fonts you select are downloaded at build time, checked, and embedded into the WebAssembly (WASM) binary inside the VSIX. When the extension is running, it resolves those packages and fonts from the embedded bundle. It does not contact the Typst package registry, download fonts, or need operating-system font discovery. A package that was not bundled is reported as missing instead of being fetched from the network.
 
-The compiler runs inside the browser's WebAssembly sandbox. The WASM module has **no ambient network access and no unrestricted operating-system filesystem access**: it cannot open arbitrary files, scan folders, or make network requests by itself. To compile a document, the VS Code extension host reads the workspace inputs that the editor makes available and explicitly passes the required content to the WASM compiler through the extension API bridge. That is a controlled input channel, not direct filesystem access from WASM.
+The compiler runs inside the browser's WebAssembly sandbox. The WASM module has no ambient network access and no unrestricted operating-system filesystem access: it cannot open arbitrary files, scan folders, or make network requests by itself. To compile a document, the VS Code extension host reads the workspace inputs that the editor makes available and explicitly passes the required content to the WASM compiler through the extension API bridge. That is a controlled input channel, not direct filesystem access from WASM.
 
 This boundary limits what the compiler module can access; it is not a claim that every document or extension is automatically safe. The compiler still processes document content supplied to it, and the surrounding VS Code/browser installation should be kept up to date.
 
@@ -128,7 +128,7 @@ Copy the generated `.vsix` file to the computer where you want to use the extens
 
 1. Open Visual Studio Code.
 2. Open the Extensions view with `Ctrl+Shift+X` (Windows/Linux) or `Cmd+Shift+X` (macOS).
-3. Select the `...` menu in the Extensions view and choose **Install from VSIX...**. You can also open the Command Palette and run **Extensions: Install from VSIX...**.
+3. Select the `...` menu in the Extensions view and choose Install from VSIX.... You can also open the Command Palette and run Extensions: Install from VSIX....
 4. Select the VSIX you built, for example `dist/tinymist-web-custom.vsix`.
 5. Reload or restart VS Code if it asks you to.
 
