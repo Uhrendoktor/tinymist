@@ -514,7 +514,7 @@ export class LanguageState {
     // the identity sent over LSP, and translate it only at the VS Code fs API
     // boundary where the registered provider's scheme is required.
     const isWithinWorkspaceFolder = (uriPath: string, folderPath: string) => {
-      const root = folderPath.replace(/\\/+$/, "") || "/";
+      const root = folderPath.replace(/\/+$/, "") || "/";
       return uriPath === root || uriPath.startsWith(root === "/" ? "/" : `${root}/`);
     };
 
