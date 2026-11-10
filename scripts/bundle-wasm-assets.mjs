@@ -10,6 +10,11 @@ import {
   isSpdxLicensePointer,
   resolvePackageLicenseMetadata,
 } from "./wasm-package-license.mjs";
+import {
+  copyPackageDirectory,
+  fetchLatestTypstPackageVersion,
+  checkoutGitPackage,
+} from "./wasm-package-source.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const outputDir = path.join(root, "target", "wasm-assets");
@@ -94,12 +99,12 @@ function packageUrl(item) {
   return item.url || "https://packages.typst.org/" + item.namespace + "/" + item.name + "-" + item.version + ".tar.gz";
 }
 
-function packageLockRecord(id, url, digest, license, licenseNotices) {
-  return { id, url, sha256: digest, license, licenseNotices };
+function packageLockRecord(id, manifestKey, version, source, digest, license, licenseNotices) {
+  return { id, manifestKey, version, source, sha256: digest, license, licenseNotices };
 }
 
 function validateManifest(manifest) {
-  assert.equal(manifest.schemaVersion, 1, "unsupported WASM asset manifest schema");
+  assert.equal(manifest.schemaVersion, 2, "unsupported WASM asset manifest schema");
   assert.ok(Array.isArray(manifest.packages), "manifest.packages must be an array");
   assert.ok(Array.isArray(manifest.fonts), "manifest.fonts must be an array");
   const limits = {
@@ -111,11 +116,28 @@ function validateManifest(manifest) {
     assert.ok(Number.isSafeInteger(value) && value > 0, "limits." + key + " must be a positive integer");
   }
 
-  const packageIds = new Set();
+  const packageKeys = new Set();
   for (const item of manifest.packages) {
     safeSegment(item.namespace, "package namespace");
     safeSegment(item.name, "package name");
-    safeSegment(item.version, "package version");
+    assert.equal(typeof item.manifestKey, "string", "each package must have a manifest key");
+    assert.ok(!packageKeys.has(item.manifestKey), "duplicate package declaration: " + item.manifestKey);
+    packageKeys.add(item.manifestKey);
+    assert.ok(item.source && typeof item.source === "object", "package " + item.name + " is missing its source");
+    if (item.source.type === "registry") {
+      assert.ok(
+        item.versionSpec === "latest" || /^\d+\.\d+\.\d+$/.test(item.versionSpec),
+        "registry package " + item.name + " requires a full version or latest",
+      );
+    } else if (item.source.type === "path") {
+      assert.equal(typeof item.source.path, "string", "package path must be a string");
+    } else if (item.source.type === "git") {
+      assert.equal(typeof item.source.git, "string", "package Git URL must be a string");
+      assert.ok(["rev", "tag", "branch"].includes(item.source.refType), "unsupported package Git reference type");
+      assert.equal(typeof item.source.ref, "string", "package Git reference must be a string");
+    } else {
+      throw new Error("unsupported package source type for " + item.name);
+    }
     if (item.license !== undefined) {
       assert.equal(typeof item.license, "string", "package license override must be a string");
     }
@@ -127,9 +149,6 @@ function validateManifest(manifest) {
     if (item.licenseUrl !== undefined) {
       assert.ok(item.licenseUrl.startsWith("https://"), "package license-url override must use HTTPS");
     }
-    const id = packageKey(item);
-    assert.ok(!packageIds.has(id), "duplicate package: " + id);
-    packageIds.add(id);
   }
 
   const fontIds = new Set();
@@ -144,9 +163,8 @@ function validateManifest(manifest) {
     fontIds.add(id);
     fontFiles.add(item.file);
   }
-  return { limits, packageIds, fontIds };
+  return { limits, packageKeys, fontIds };
 }
-
 function validateArchive(archivePath) {
   const listing = execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
   const names = listing.split(/\r?\n/).filter(Boolean);
@@ -199,8 +217,6 @@ function extractPackage(archivePath, destination) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  // Custom manifests may live outside the checkout, so users can build
-  // personal browser bundles without maintaining a fork.
   const manifestPath = path.resolve(root, args.manifest);
   const manifestDirectory = path.dirname(manifestPath);
   assert.match(manifestPath, /\.(?:toml|json)$/i, "asset manifest must be a TOML or JSON file");
@@ -341,9 +357,11 @@ async function main() {
     version = packageManifest.package?.version;
     assert.equal(typeof version, "string", "package " + item.name + " typst.toml must declare a version");
     assert.match(version, /^\d+\.\d+\.\d+$/, "package " + item.name + " must declare a full x.y.z version");
-    if (item.source.type === "registry") {
-      assert.equal(version, item.versionSpec === "latest" ? previous?.version ?? version : item.versionSpec,
-        "downloaded package version does not match the requested version for " + item.name);
+    if (item.source.type === "registry" && item.versionSpec !== "latest") {
+      assert.equal(version, item.versionSpec, "downloaded package version does not match the requested version for " + item.name);
+    }
+    if (args.mode === "locked" && item.versionSpec === "latest") {
+      assert.equal(version, previous.version, "locked latest package version changed for " + item.name);
     }
     safeSegment(version, "package version");
     const id = packageKey({ ...item, version });
@@ -423,8 +441,8 @@ async function main() {
     const packageRecord = packageLockRecord(
       id,
       item.manifestKey,
-      sourceRecord,
       version,
+      sourceRecord,
       digest,
       resolvedLicense.license,
       licenseNotices,
@@ -503,9 +521,6 @@ async function main() {
   for (const packagePath of await listFiles(packageDir)) {
     if (!packagePath.endsWith(".typ")) continue;
     const source = await fs.readFile(packagePath, "utf8");
-    // Only resolve actual Typst import/include directives. Package names can
-    // also occur in documentation examples and metadata strings, which are
-    // not runtime dependencies.
     const uncommented = source
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");
@@ -515,7 +530,7 @@ async function main() {
       if (!selectedPackages.has(dependency)) {
         throw new Error(
           "Unbundled transitive Typst package " + dependency + " referenced in " +
-          path.relative(outputDir, packagePath) + ". Add its exact version to " + manifestLabel
+          path.relative(outputDir, packagePath) + ". Add its version to [packages] in " + manifestLabel
         );
       }
     }
