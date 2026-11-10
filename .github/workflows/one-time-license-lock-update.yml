@@ -5,6 +5,10 @@ on:
     branches: [wasm/auto-package-license-lock]
     paths:
       - .github/workflows/one-time-license-lock-update.yml
+      - scripts/bundle-wasm-assets.mjs
+      - scripts/wasm-package-license.mjs
+      - scripts/wasm-assets-manifest.mjs
+      - wasm-assets.toml
 
 permissions:
   contents: write
