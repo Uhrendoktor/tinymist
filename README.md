@@ -9,9 +9,9 @@ Tinymist \[ˈtaɪni mɪst\] is an integrated language service for [Typst](https:
 
 This repository is a standalone, maintained fork of [upstream Tinymist](https://github.com/Myriad-Dreamin/tinymist). Its main branch is kept up to date by bringing upstream changes into this fork while retaining the fork-specific work described here.
 
-The browser and WebAssembly packaging and asset-bundling capability is owned and maintained exclusively in this fork. This includes the Cargo-style `wasm-assets.toml` dependency manifest, its checksum lock file, bundled Typst packages and fonts, and the local `scripts/build-browser.mjs` builder for browser VSIX files.
+The browser and WebAssembly packaging and asset-bundling capability is owned and maintained exclusively in this fork. This includes the Cargo-style wasm-assets.toml dependency manifest, its checksum lock file, bundled Typst packages and fonts, and the local scripts/build-browser.mjs builder for browser VSIX files.
 
-This fork is not an upstream contribution branch. Do not merge this fork's main branch or its WASM-specific feature branches back into Myriad-Dreamin/tinymist, and do not submit fork-only WASM changes as upstream pull requests. Upstream changes flow into this fork; the WASM bundling capability is maintained here.
+This fork is not an upstream contribution branch. Do not merge this fork’s main branch or its WASM-specific feature branches back into Myriad-Dreamin/tinymist, and do not submit fork-only WASM changes as upstream pull requests. Upstream changes flow into this fork; the WASM bundling capability is maintained here.
 
 For dependency configuration and local VSIX builds, see the [browser WASM asset guide](docs/wasm-browser-assets.md).
 
