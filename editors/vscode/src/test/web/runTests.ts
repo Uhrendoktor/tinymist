@@ -31,6 +31,11 @@ type PreviewTask = {
     contentElementCount: number;
     visibleContentElementCount: number;
     markupLength: number;
+    rasterWidth: number;
+    rasterHeight: number;
+    nonWhitePixelCount: number;
+    opaquePixelCount: number;
+    rasterError?: string;
   };
 };
 
@@ -194,6 +199,7 @@ export async function run(): Promise<void> {
 
   const firstSource = [
     "#set page(width: 360pt, height: 240pt, margin: 20pt)",
+    "#set text(fill: black)",
     "= Browser preview acceptance",
     "First page content. ORIGINAL_MARKER.",
     "#pagebreak()",
@@ -256,6 +262,14 @@ export async function run(): Promise<void> {
       renderMetrics.visibleContentElementCount > 0 &&
       renderMetrics.markupLength > 0,
     `Rendered SVG contains no visible page content: ${JSON.stringify(renderMetrics)}`,
+  );
+  assert(
+    !renderMetrics.rasterError &&
+      renderMetrics.rasterWidth > 0 &&
+      renderMetrics.rasterHeight > 0 &&
+      renderMetrics.opaquePixelCount > 0 &&
+      renderMetrics.nonWhitePixelCount > 0,
+    `Preview SVG painted no non-white pixels: ${JSON.stringify(renderMetrics)}`,
   );
 
   await waitFor("Typst preview outline", async () => {
@@ -358,8 +372,9 @@ export async function run(): Promise<void> {
     );
     assert(
       secondRenderedTask.renderMetrics!.visibleSvgCount > 0 &&
-        secondRenderedTask.renderMetrics!.visibleContentElementCount > 0,
-      `Second preview rendered no visible page content: ${JSON.stringify(secondRenderedTask.renderMetrics)}`,
+        secondRenderedTask.renderMetrics!.visibleContentElementCount > 0 &&
+        secondRenderedTask.renderMetrics!.nonWhitePixelCount > 0,
+      `Second preview rendered no visible painted page content: ${JSON.stringify(secondRenderedTask.renderMetrics)}`,
     );
 
     await waitFor("two isolated browser preview tasks", async () => {
