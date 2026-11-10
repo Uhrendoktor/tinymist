@@ -13,11 +13,11 @@
 #if is-md-target {
   let image(src, alt: none) = html.elem("img", attrs: (src: src, alt: alt))
   link(
-    "https://github.com/Myriad-Dreamin/tinymist/blob/main/LICENSE",
-    image("https://img.shields.io/github/license/Myriad-Dreamin/tinymist", alt: "GitHub license"),
+    "https://github.com/Uhrendoktor/tinymist/blob/main/LICENSE",
+    image("https://img.shields.io/github/license/Uhrendoktor/tinymist", alt: "GitHub license"),
   )
-  link("https://github.com/Myriad-Dreamin/tinymist/actions/workflows/ci.yml", image(
-    "https://github.com/Myriad-Dreamin/tinymist/actions/workflows/ci.yml/badge.svg?event=push",
+  link("https://github.com/Uhrendoktor/tinymist/actions/workflows/ci.yml", image(
+    "https://github.com/Uhrendoktor/tinymist/actions/workflows/ci.yml/badge.svg?event=push",
     alt: "Actions status",
   ))
   link("https://myriad-dreamin.github.io/tinymist/", image(
@@ -31,6 +31,16 @@
 }
 
 Tinymist [ˈtaɪni mɪst] is an integrated language service for #link("https://typst.app/")[Typst] [taɪpst]. You can also call it #ruby[微][wēi][霭][ǎi] in Chinese.
+
+= About this fork
+
+This repository is a standalone, maintained fork of #link("https://github.com/Myriad-Dreamin/tinymist")[upstream Tinymist]. Its main branch is kept up to date by bringing upstream changes into this fork while retaining the fork-specific work described here.
+
+The browser and WebAssembly packaging and asset-bundling capability is owned and maintained exclusively in this fork. This includes the Cargo-style wasm-assets.toml dependency manifest, its checksum lock file, bundled Typst packages and fonts, and the local scripts/build-browser.mjs builder for browser VSIX files.
+
+This fork is not an upstream contribution branch. Do not merge this fork's main branch or its WASM-specific feature branches back into Myriad-Dreamin/tinymist, and do not submit fork-only WASM changes as upstream pull requests. Upstream changes flow into this fork; the WASM bundling capability is maintained here.
+
+For dependency configuration and local VSIX builds, see the #link("docs/wasm-browser-assets.md")[browser WASM asset guide].
 
 It contains:
 - an analyzing library for Typst, see #github-link("/crates/tinymist-query/")[tinymist-query].
