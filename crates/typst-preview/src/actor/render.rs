@@ -119,7 +119,16 @@ impl RenderActor {
             // otherwise, we render the incremental changes for only once
             let has_full_render = has_full_render;
             log::debug!("RenderActor: has_full_render: {has_full_render}");
-            let Some(document) = self.view.read().as_ref().and_then(|view| view.doc()) else {
+            let document = {
+                let view_guard = self.view.read();
+                let Some(view) = view_guard.as_ref() else {
+                    log::info!("RenderActor: CompileView is not ready");
+                    continue;
+                };
+                let document = view.doc();
+                document
+            };
+            let Some(document) = document else {
                 log::info!("RenderActor: document is not ready");
                 continue;
             };
@@ -146,7 +155,8 @@ impl RenderActor {
         let mut renderer = Self::new_renderer();
         let delta = renderer.pack_delta(document);
         self.renderer = renderer;
-        match protocol::full_current_frame_from_delta(&delta) {
+        let frame = protocol::full_current_frame_from_delta(&delta);
+        match frame {
             Some(frame) => frame,
             None => {
                 log::warn!("fresh preview renderer did not produce a diff-v1 frame");

@@ -14,6 +14,8 @@
   <!-- before all of code to avoid rerender by style replacement -->
   <script>
     if (typeof acquireVsCodeApi !== "undefined") {
+      const vscodeAPI = acquireVsCodeApi();
+      window.__tinymistVscodeApi = vscodeAPI;
       const bytes2utf8 = new TextDecoder("utf-8");
       /**
        * Base64 to UTF-8
@@ -34,6 +36,30 @@
         window.vscode_state = JSON.parse(base64Decode(state));
         console.log("vscode_state", window.vscode_state);
       }
+      const reportError = (message) =>
+        vscodeAPI.postMessage({ type: "tinymist-preview-error", message });
+      // Install diagnostics before the bundled frontend modules load. This is
+      // intentionally unconditional: the extension host must be able to tell
+      // a missing/stale injected state apart from a Webview that never loaded.
+      window.addEventListener(
+        "error",
+        (event) => {
+          reportError(
+            `${event.message || "Preview script failed"} (${event.filename}:${event.lineno}:${event.colno})`,
+          );
+        },
+        true,
+      );
+      window.addEventListener("unhandledrejection", (event) => {
+        const reason = event.reason;
+        reportError(reason?.stack || String(reason));
+      });
+      vscodeAPI.postMessage({
+        type: "tinymist-preview-document-ready",
+        statePresent: !!window.vscode_state,
+        browserTransport: window.vscode_state?.browserTransport === true,
+        href: window.location.href,
+      });
     }
 
     /// https://stackoverflow.com/questions/13586999/color-difference-similarity-between-two-values-with-js

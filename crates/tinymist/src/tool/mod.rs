@@ -5,5 +5,5 @@ pub mod package;
 pub mod project;
 pub mod word_count;
 
-#[cfg(feature = "preview")]
+#[cfg(any(feature = "preview", feature = "preview-web"))]
 pub mod preview;

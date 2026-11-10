@@ -106,8 +106,22 @@ export async function buildPreview() {
 
   await Promise.all([run("tsc", "npx tsc"), run("vite", "npx vite build")]);
 
+  const builtHtmlPath = path.resolve(previewDir, "dist/index.html");
+  const builtHtml = await fs.readFile(builtHtmlPath, "utf8");
+  for (const marker of [
+    "tinymist-preview-frame",
+    "browserTransport",
+    "tinymist-preview-document-ready",
+  ]) {
+    if (!builtHtml.includes(marker)) {
+      throw new Error(
+        `Bundled preview HTML is missing browser transport marker: ${marker}`,
+      );
+    }
+  }
+
   await fs.copyFile(
-    path.resolve(previewDir, "dist/index.html"),
+    builtHtmlPath,
     path.resolve(cwd, "crates/tinymist-assets/src/typst-preview.html"),
   );
 }
@@ -146,14 +160,26 @@ export async function buildTinymistVscodeWebBase() {
   await spawnAsync("vscode:web", "cd editors/vscode && node esbuild.web.mjs");
 }
 
+export async function bundleWasmAssets() {
+  const manifest = process.env.TINYMIST_WASM_ASSET_MANIFEST || "wasm-assets.json";
+  const updateLock = process.env.TINYMIST_WASM_ASSET_UPDATE_LOCK === "true";
+  const mode = updateLock ? "--update-lock" : "--locked";
+  await spawnAsync(
+    "wasm:assets",
+    `node scripts/bundle-wasm-assets.mjs --manifest "${manifest}" ${mode}`,
+  );
+}
+
 export async function buildTinymistVscodeWeb() {
-  await Promise.all([
-    checkVersion(),
-    buildSyntax(),
-    buildL10n(),
-    buildEditorTools(),
-    buildWebLspBinary().then(buildTinymistVscodeWebBase),
-  ]);
+  await Promise.all([checkVersion(), buildSyntax(), buildL10n(), buildEditorTools()]);
+
+  // TYPST_PREVIEW_HTML is compiled into tinymist_bg.wasm. Build the frontend
+  // first so the WASM package always contains the same bundled renderer that
+  // the browser Webview bridge expects.
+  await buildPreview();
+  await bundleWasmAssets();
+  await buildWebLspBinary();
+  await buildTinymistVscodeWebBase();
 }
 
 export async function testTinymistVscodeBase() {
@@ -228,16 +254,40 @@ export async function installVscode(kind) {
 }
 
 export async function buildWebLspBinaryBase() {
+  // The published tinymist-assets crate contains a placeholder preview page.
+  // Build the browser binary against the local crate populated by buildPreview.
+  // Keep this override scoped to the WASM build so generic cargo installs and
+  // native-only builds continue using the published assets crate.
+  const localAssetsPath = path.resolve(cwd, "crates/tinymist-assets").replace(/\\/g, "/");
+  const localAssetsPatch = `patch.crates-io.tinymist-assets.path=${JSON.stringify(localAssetsPath)}`;
+  const cargoConfigArg = `'${localAssetsPatch.replace(/'/g, "'\\''")}'`;
+
   await spawnAsync(
     "lsp:web",
-    "cd crates/tinymist && wasm-pack build --target web -- --no-default-features --features web,no-content-hint",
+    `cd crates/tinymist && wasm-pack build --target web -- --config ${cargoConfigArg} --no-default-features --features web,preview-web,export,no-content-hint`,
+    {
+      cwd,
+      env: {
+        ...process.env,
+        TINYMIST_WASM_ASSET_DIR: path.resolve(cwd, "target/wasm-assets"),
+      },
+    },
   );
 }
 
 export async function buildWebLspBinary() {
   await buildWebLspBinaryBase();
-  await fs.copyFile(
-    path.resolve(cwd, "crates/tinymist/pkg/tinymist_bg.wasm"),
-    path.resolve(vscodeDir, "out/tinymist_bg.wasm"),
-  );
+  const wasmInput = path.resolve(cwd, "target/wasm/tinymist_bg.wasm");
+  await fs.mkdir(path.dirname(wasmInput), { recursive: true });
+  await fs.copyFile(path.resolve(cwd, "crates/tinymist/pkg/tinymist_bg.wasm"), wasmInput);
+}
+
+/**
+ * Builds and packages the browser-only VS Code distribution.
+ *
+ * This path deliberately does not build or copy the native Tinymist executable.
+ */
+export async function packageTinymistVscodeWeb() {
+  await buildTinymistVscodeWeb();
+  await spawnAsync("vscode:web:package", "node scripts/package-web.mjs");
 }

@@ -1,23 +1,32 @@
 use std::{collections::HashMap, sync::Arc};
 
+#[cfg(feature = "preview")]
+use crate::tool::preview::HttpServer;
 use lsp_types::notification::Notification;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sync_ls::{internal_error, LspClient, LspResult};
+#[cfg(feature = "preview-web")]
+use tinymist_preview::WsMessage;
+#[cfg(any(feature = "preview", feature = "preview-web"))]
 use tinymist_preview::{ControlPlaneMessage, Previewer};
 use tinymist_std::error::IgnoreLogging;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::project::ProjectPreviewState;
-use crate::tool::preview::{HttpServer, ProjectPreviewHandler};
+use crate::tool::preview::ProjectPreviewHandler;
 
 pub struct PreviewTab {
     /// Task ID
     pub task_id: String,
     /// Previewer
     pub previewer: Previewer,
-    /// Http Server for Previewer
+    /// Native HTTP/WebSocket server for the previewer.
+    #[cfg(feature = "preview")]
     pub srv: HttpServer,
+    /// The inbound browser data-plane for Webview messages.
+    #[cfg(feature = "preview-web")]
+    pub browser_input: Option<mpsc::UnboundedSender<WsMessage>>,
     /// Control plane message sender
     pub ctl_tx: mpsc::UnboundedSender<ControlPlaneMessage>,
     /// Compile handler
@@ -34,6 +43,8 @@ pub enum PreviewRequest {
     KillAll(oneshot::Sender<LspResult<JsonValue>>),
     Scroll(String, ControlPlaneMessage),
     ScrollAll(ControlPlaneMessage),
+    #[cfg(feature = "preview-web")]
+    BrowserMessage(String, WsMessage),
 }
 
 pub struct PreviewActor {
@@ -49,6 +60,10 @@ impl PreviewActor {
         while let Some(req) = self.preview_rx.recv().await {
             match req {
                 PreviewRequest::Started(tab) => {
+                    log::info!(
+                        "[browser-preview-debug] actor registered preview tab task={}",
+                        tab.task_id
+                    );
                     self.tabs.insert(tab.task_id.clone(), tab);
                 }
                 PreviewRequest::Kill(task_id, tx) => {
@@ -67,6 +82,32 @@ impl PreviewActor {
                 PreviewRequest::ScrollAll(req) => {
                     for task_id in self.tabs.keys().cloned().collect::<Vec<_>>() {
                         self.scroll(task_id, req.clone()).await;
+                    }
+                }
+                #[cfg(feature = "preview-web")]
+                PreviewRequest::BrowserMessage(task_id, message) => {
+                    log::info!(
+                        "[browser-preview-debug] actor received client frame task={task_id}"
+                    );
+                    if let Some(input) = self
+                        .tabs
+                        .get(&task_id)
+                        .and_then(|tab| tab.browser_input.as_ref())
+                    {
+                        if input.send(message).is_err() {
+                            log::warn!(
+                                "[browser-preview-debug] actor input channel closed task={task_id}"
+                            );
+                        } else {
+                            log::info!(
+                                "[browser-preview-debug] actor queued client frame task={task_id}"
+                            );
+                        }
+                    } else {
+                        log::warn!(
+                            "[browser-preview-debug] no registered tab/input for client frame task={task_id}; registered={:?}",
+                            self.tabs.keys().collect::<Vec<_>>()
+                        );
                     }
                 }
             }
@@ -103,16 +144,23 @@ impl PreviewActor {
                 .log_error_with(|| format!("PreviewTask({}): failed to settle", tab.task_id));
         }
 
+        #[cfg(feature = "preview-web")]
+        drop(tab.browser_input.take());
+
         let client = self.client.clone();
         self.client.handle.spawn(async move {
             tab.previewer.stop().await;
+            #[cfg(feature = "preview")]
             let _ = tab.srv.shutdown_tx.send(());
 
             // Wait for previewer to stop
             log::info!("PreviewTask({task_id}): wait for previewer to stop");
             tab.previewer.join().await;
-            log::info!("PreviewTask({task_id}): wait for static server to stop");
-            let _ = tab.srv.join.await;
+            #[cfg(feature = "preview")]
+            {
+                log::info!("PreviewTask({task_id}): wait for static server to stop");
+                let _ = tab.srv.join.await;
+            }
 
             log::info!("PreviewTask({task_id}): killed");
             // Send response

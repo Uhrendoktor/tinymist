@@ -46,6 +46,12 @@ const PROBE_TIMEOUT = 60_000;
 /**
  * The result of starting a preview task.
  */
+export interface BrowserPreviewDataMessage {
+  taskId: string;
+  kind: "text" | "binary" | "ping" | "pong";
+  data: string;
+}
+
 export interface PreviewResult {
   /**
    * The frontend address
@@ -110,6 +116,8 @@ export class LanguageState {
   clientPromise: Promise<LanguageClient> = new Promise((resolve) => {
     this.clientPromiseResolve = resolve;
   });
+  private browserPreviewListeners = new Map<string, (message: BrowserPreviewDataMessage) => void>();
+  private pendingBrowserPreviewMessages = new Map<string, BrowserPreviewDataMessage[]>();
 
   async stop() {
     this.clientPromiseResolve = (_client: LanguageClient) => {};
@@ -125,6 +133,8 @@ export class LanguageState {
       await this.client.stop();
       this.client = undefined;
     }
+    this.browserPreviewListeners.clear();
+    this.pendingBrowserPreviewMessages.clear();
     // Reset server readiness flag so other code doesn't assume a running server
     if (extensionState?.mut) {
       extensionState.mut.serverReady = false;
@@ -429,7 +439,12 @@ export class LanguageState {
     const res = await tinymist.executeCommand<PreviewResult>(`tinymist.doStartPreview`, [
       previewArgs,
     ]);
-    return res || {};
+    if (!res || typeof res.isPrimary !== "boolean") {
+      throw new Error(
+        `Tinymist did not confirm preview task startup (response: ${JSON.stringify(res)})`,
+      );
+    }
+    return res;
   }
 
   /**
@@ -445,7 +460,12 @@ export class LanguageState {
     const res = await tinymist.executeCommand<PreviewResult>(`tinymist.doStartBrowsingPreview`, [
       previewArgs,
     ]);
-    return res || {};
+    if (!res || typeof res.isPrimary !== "boolean") {
+      throw new Error(
+        `Tinymist did not confirm browsing preview task startup (response: ${JSON.stringify(res)})`,
+      );
+    }
+    return res;
   }
 
   /**
@@ -488,16 +508,61 @@ export class LanguageState {
     const hasRead = new Map<string, [number, FileResult | undefined]>();
     let watchClock = 0;
 
-    const tryRead = async (uri: vscode.Uri) =>
-      vscode.workspace.fs.readFile(uri).then(
+    // The WASM VFS represents files with canonical file: URIs, but a browser
+    // workspace may be backed by another VS Code FileSystemProvider (for
+    // example vscode-test-web: or vscode-vfs:). Keep the server-side URI as
+    // the identity sent over LSP, and translate it only at the VS Code fs API
+    // boundary where the registered provider's scheme is required.
+    const isWithinWorkspaceFolder = (uriPath: string, folderPath: string) => {
+      const root = folderPath.replace(/\/+$/, "") || "/";
+      return uriPath === root || uriPath.startsWith(root === "/" ? "/" : `${root}/`);
+    };
+
+    const workspaceUriForServerUri = (uri: vscode.Uri): vscode.Uri => {
+      if (uri.scheme !== "file") {
+        return uri;
+      }
+
+      const folder = (vscode.workspace.workspaceFolders ?? [])
+        .filter(
+          ({ uri: folderUri }) =>
+            folderUri.scheme !== "file" &&
+            isWithinWorkspaceFolder(uri.path, folderUri.path),
+        )
+        .sort((left, right) => right.uri.path.length - left.uri.path.length)[0];
+
+      return folder ? folder.uri.with({ path: uri.path }) : uri;
+    };
+
+    const serverUriForWorkspaceUri = (uri: vscode.Uri): vscode.Uri => {
+      if (uri.scheme === "file") {
+        return uri;
+      }
+
+      const folder = (vscode.workspace.workspaceFolders ?? [])
+        .filter(
+          ({ uri: folderUri }) =>
+            folderUri.scheme === uri.scheme &&
+            folderUri.authority === uri.authority &&
+            isWithinWorkspaceFolder(uri.path, folderUri.path),
+        )
+        .sort((left, right) => right.uri.path.length - left.uri.path.length)[0];
+
+      return folder ? uri.with({ scheme: "file", authority: "", query: "", fragment: "" }) : uri;
+    };
+
+    const tryRead = async (uri: vscode.Uri) => {
+      const workspaceUri = workspaceUriForServerUri(uri);
+      return vscode.workspace.fs.readFile(workspaceUri).then(
         (data): FileResult => {
           return { type: "ok", content: bytesBase64Encode(data) } as const;
         },
         (err: any): FileResult => {
-          console.error("Failed to read file", uri, err);
+          console.error("Failed to read file", uri, "via workspace URI", workspaceUri, err);
           return { type: "err", error: err.message as string } as const;
         },
       );
+    };
 
     const registerHasRead = (uri: string, currentClock: number, content?: FileResult) => {
       const previous = hasRead.get(uri);
@@ -512,18 +577,17 @@ export class LanguageState {
       if (this._watcher) {
         return this._watcher;
       }
-      console.log("registering watcher");
 
       this._watcher = vscode.workspace.createFileSystemWatcher("**/*");
 
       const watchRead = async (currentClock: number, uri: vscode.Uri) => {
-        console.log("watchRead", uri, currentClock, watches);
-        const uriStr = uri.toString();
+        const serverUri = serverUriForWorkspaceUri(uri);
+        const uriStr = serverUri.toString();
         if (!watches.has(uriStr)) {
           return;
         }
 
-        const content = await tryRead(uri);
+        const content = await tryRead(serverUri);
         if (!registerHasRead(uriStr, currentClock, content)) {
           return;
         }
@@ -531,22 +595,23 @@ export class LanguageState {
         const inserts: FileChange[] = [{ uri: uriStr, content }];
         const removes: string[] = [];
 
-        client.sendRequest(fsChange, { inserts, removes, isSync: false });
+        try {
+          await client.sendRequest<void>(FS_CHANGE_METHOD, { inserts, removes, isSync: false });
+        } catch (error) {
+          console.error("Failed to send watcher filesystem change", currentClock, uriStr, error);
+        }
       };
 
       this._watcher.onDidChange((uri) => {
         const currentClock = watchClock++;
-        console.log("fs change", uri, currentClock);
         watchRead(currentClock, uri);
       });
       this._watcher.onDidCreate((uri) => {
         const currentClock = watchClock++;
-        console.log("fs create", uri, currentClock);
         watchRead(currentClock, uri);
       });
       this._watcher.onDidDelete((uri) => {
         const currentClock = watchClock++;
-        console.log("fs delete", uri, currentClock);
         watchRead(currentClock, uri);
       });
 
@@ -554,13 +619,8 @@ export class LanguageState {
     };
 
     // todo: move registering to initClient to avoid unhandled errors.
-    client.onRequest("tinymist/fs/watch", (params: FsWatchRequest) => {
+    client.onRequest("tinymist/fs/watch", async (params: FsWatchRequest) => {
       const currentClock = watchClock++;
-      console.log(
-        "fs watch request",
-        params,
-        vscode.workspace.workspaceFolders?.map((folder) => folder.uri.toString()),
-      );
 
       const filesToRead = new Set<string>();
       const filesDeleted = new Set<string>();
@@ -582,22 +642,25 @@ export class LanguageState {
         return filesDeleted.has(path) && registerHasRead(path, currentClock, undefined);
       });
 
-      (async () => {
-        const paths = Array.from(filesToRead);
-        const readFiles = await Promise.all(paths.map((path) => tryRead(vscode.Uri.parse(path))));
+      // Subscribe before reading so edits made during the initial read are not lost.
+      watcher();
 
-        watcher();
+      const paths = Array.from(filesToRead);
+      const readFiles = await Promise.all(paths.map((path) => tryRead(vscode.Uri.parse(path))));
 
-        const inserts: FileChange[] = paths
-          .map((path, idx) => ({
-            uri: path,
-            content: readFiles[idx],
-          }))
-          .filter((change) => registerHasRead(change.uri, currentClock, change.content));
+      const inserts: FileChange[] = paths
+        .map((path, idx) => ({
+          uri: path,
+          content: readFiles[idx],
+        }))
+        .filter((change) => registerHasRead(change.uri, currentClock, change.content));
 
-        console.log("fs watch read", currentClock, inserts, removes);
-        client.sendRequest(fsChange, { inserts, removes, isSync: true });
-      })();
+      try {
+        await client.sendRequest<void>("tinymist/fsChange", { inserts, removes, isSync: false });
+      } catch (error) {
+        console.error("Failed to send initial workspace filesystem changes", error);
+        throw error;
+      }
     });
   }
 
@@ -606,6 +669,31 @@ export class LanguageState {
    * {@link _GroupDocumentPreviewFeatureCommands} for more information.
    */
   registerPreviewNotifications(client: LanguageClient) {
+    // Browser preview data-plane frames are relayed to the matching Webview. Messages are queued
+    // until the Webview has finished opening so the initial full render is not lost.
+    client.onNotification("tinymist/preview/serverMessage", (message: BrowserPreviewDataMessage) => {
+      if (!message || typeof message.taskId !== "string") {
+        return;
+      }
+      console.log(
+        "[browser-preview-debug] extension host received server frame",
+        message.taskId,
+        message.kind,
+      );
+      const listener = this.browserPreviewListeners.get(message.taskId);
+      if (listener) {
+        listener(message);
+        return;
+      }
+      const pending = this.pendingBrowserPreviewMessages.get(message.taskId) || [];
+      pending.push(message);
+      // A disconnected Webview must not be able to grow the extension-host queue indefinitely.
+      if (pending.length > 512) {
+        pending.shift();
+      }
+      this.pendingBrowserPreviewMessages.set(message.taskId, pending);
+    });
+
     // (Required) The server requests to dispose (clean up) a preview task when it is no longer
     // needed.
     client.onNotification("tinymist/preview/dispose", ({ taskId }) => {
@@ -683,6 +771,46 @@ export class LanguageState {
     client.onNotification("tinymist/preview/windowState", async (data: unknown) => {
       await saveStoredViewerWindowState(this.context, data);
     });
+  }
+
+  /**
+   * Registers the Webview receiver for one browser preview's message channel.
+   */
+  registerBrowserPreviewMessageListener(
+    taskId: string,
+    listener: (message: BrowserPreviewDataMessage) => void,
+  ): vscode.Disposable {
+    this.browserPreviewListeners.set(taskId, listener);
+    const pending = this.pendingBrowserPreviewMessages.get(taskId) || [];
+    this.pendingBrowserPreviewMessages.delete(taskId);
+    for (const message of pending) {
+      listener(message);
+    }
+    return {
+      dispose: () => {
+        if (this.browserPreviewListeners.get(taskId) === listener) {
+          this.browserPreviewListeners.delete(taskId);
+        }
+        this.pendingBrowserPreviewMessages.delete(taskId);
+      },
+    };
+  }
+
+  /**
+   * Sends one Webview WebSocket frame to the Rust preview actor.
+   */
+  sendBrowserPreviewMessage(message: BrowserPreviewDataMessage): void {
+    if (!this.client) {
+      console.warn("Dropping browser preview frame because the language client is stopped");
+      return;
+    }
+    console.log(
+      "[browser-preview-debug] extension host sending client frame",
+      message.taskId,
+      message.kind,
+      message.data.length,
+    );
+    this.client.sendNotification("tinymist/preview/clientMessage", message);
   }
 
   /**
@@ -919,4 +1047,4 @@ export interface FsChangeParams {
   isSync: boolean;
 }
 
-const fsChange = new lc.RequestType<FsChangeParams, void, void>("tinymist/fsChange");
+const FS_CHANGE_METHOD = "tinymist/fsChange";

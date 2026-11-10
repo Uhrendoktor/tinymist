@@ -5,6 +5,7 @@
 !out/tinymist-docs.pdf
 !out/extension.js
 !out/extension.web.js
+!out/web-server.js
 !out/tinymist_bg.wasm
 !out/tinymist
 !out/tinymist.exe
@@ -18,3 +19,4 @@
 !README.md
 !LICENSE
 !CHANGELOG.md
+!out/THIRD-PARTY-NOTICES.txt

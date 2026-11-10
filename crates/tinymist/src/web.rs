@@ -1,6 +1,9 @@
 //! Tinymist Web APIs.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::LazyLock;
+use std::task::{Context, Poll};
 
 use futures::future::MaybeDone;
 use sync_ls::{
@@ -16,6 +19,14 @@ use crate::{RegularInit, ServerState, LONG_VERSION};
 #[wasm_bindgen]
 pub fn version() -> String {
     LONG_VERSION.clone()
+}
+
+/// Initialize the browser runtime before attaching the LSP transport. Keeping
+/// this preflight separate makes worker-startup failures identify the runtime
+/// stage rather than appearing as an opaque language-server constructor panic.
+#[wasm_bindgen]
+pub fn init_runtime() {
+    let _ = &RUNTIMES.tokio_runtime;
 }
 
 /// TinymistLanguageServer implements the LSP protocol for Typst documents
@@ -66,7 +77,11 @@ impl TinymistLanguageServer {
 
     /// Handles internal events.
     pub fn on_event(&mut self, event_id: u32) {
-        self.state.on_server_event(event_id);
+        {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            self.state.on_server_event(event_id);
+        }
+        poll_tokio_background_tasks();
     }
 
     /// Handles incoming requests.
@@ -76,28 +91,37 @@ impl TinymistLanguageServer {
             Ok(p) => p,
             Err(err) => return lsp_err(invalid_params(err)),
         };
-
         let req_id = self.next_request_id();
-        let result = self.state.on_lsp_request(&method, req_id, params);
+        let result = {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            self.state.on_lsp_request(&method, req_id, params)
+        };
 
-        match result {
+        let response = match result {
             Ok(MaybeDone::Done(Ok(t))) => lsp_serialize(&t),
             Ok(MaybeDone::Done(Err(err))) => lsp_err(err),
             // tokio doesn't get scheduled anymore after returning to js world
-            Ok(MaybeDone::Future(fut)) => wasm_bindgen_futures::future_to_promise(async move {
-                Ok(match fut.await {
-                    Ok(t) => lsp_serialize(&t),
-                    Err(err) => lsp_err(err),
+            Ok(MaybeDone::Future(fut)) => {
+                let future = TokioDrivenFuture::new(fut);
+                wasm_bindgen_futures::future_to_promise(async move {
+                    let result = future.await;
+                    poll_tokio_background_tasks();
+                    Ok(match result {
+                        Ok(t) => lsp_serialize(&t),
+                        Err(err) => lsp_err(err),
+                    })
                 })
-            })
-            .into(),
+                .into()
+            }
             // match futures::executor::block_on(fut) {
             //     Ok(t) => lsp_serialize(&t),
             //     Err(err) => lsp_err(err),
             // },
             Ok(MaybeDone::Gone) => lsp_err(internal_error("response was weirdly gone")),
             Err(err) => lsp_err(err),
-        }
+        };
+        poll_tokio_background_tasks();
+        response
     }
 
     /// Handles incoming notifications.
@@ -111,10 +135,14 @@ impl TinymistLanguageServer {
             }
         };
 
-        let err = self.state.on_notification(&method, params);
-        if let Err(err) = err {
-            log::error!("Failed to handle notification {method}: {err:?}");
+        {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            let err = self.state.on_notification(&method, params);
+            if let Err(err) = err {
+                log::error!("Failed to handle notification {method}: {err:?}");
+            }
         }
+        poll_tokio_background_tasks();
     }
 
     /// Handles incoming responses.
@@ -127,7 +155,20 @@ impl TinymistLanguageServer {
                 return;
             }
         };
-        self.state.on_lsp_response(resp);
+        {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            self.state.on_lsp_response(resp);
+        }
+        poll_tokio_background_tasks();
+    }
+
+    /// Drive background Tokio tasks from the browser worker event loop.
+    ///
+    /// WebAssembly workers have no native executor thread to keep a current-thread
+    /// runtime alive between LSP callbacks. The worker schedules this bounded
+    /// pump periodically so preview actors and rendering tasks keep progressing.
+    pub fn poll_runtime(&mut self) {
+        poll_tokio_background_tasks();
     }
 
     /// Get the version of the language server.
@@ -152,16 +193,74 @@ pub struct Runtimes {
 
 impl Default for Runtimes {
     fn default() -> Self {
-        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
+        let mut builder = tokio::runtime::Builder::new_current_thread();
+
+        // Browser workers have neither a Mio-backed I/O reactor nor a
+        // usable std::time::Instant. Tokio's timer driver calls Instant::now()
+        // during initialization, which traps on wasm32-unknown-unknown. Leave
+        // both I/O and timers disabled; wasm-bindgen futures are driven by the
+        // browser event loop. Native builds keep the full Tokio drivers.
+        #[cfg(not(target_arch = "wasm32"))]
+        builder.enable_all();
+
+        let tokio_runtime = builder
             .build()
-            .unwrap();
+            .expect("failed to build the Tinymist Tokio runtime");
 
         Self { tokio_runtime }
     }
 }
 
 static RUNTIMES: LazyLock<Runtimes> = LazyLock::new(Runtimes::default);
+
+/// Poll an LSP response future with the WASM Tokio runtime entered.
+///
+/// LSP response futures are normally polled by the browser's JavaScript event
+/// loop. Entering the current-thread runtime for each poll allows them to call
+/// `tokio::spawn`; polling the runtime after each pending result advances the
+/// preview actors without requiring native threads or a timer/I/O driver.
+struct TokioDrivenFuture<F> {
+    future: Pin<Box<F>>,
+}
+
+impl<F> TokioDrivenFuture<F> {
+    fn new(future: F) -> Self {
+        Self {
+            future: Box::pin(future),
+        }
+    }
+}
+
+impl<F: Future> Future for TokioDrivenFuture<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        let result = {
+            let _entered = RUNTIMES.tokio_runtime.handle().enter();
+            this.future.as_mut().poll(cx)
+        };
+
+        poll_tokio_background_tasks();
+        result
+    }
+}
+
+/// Drive tasks spawned on the current-thread Tokio runtime from the browser worker.
+///
+/// Tokio's current-thread scheduler suspends background tasks whenever its
+/// block_on call returns. Native Tinymist keeps the runtime continuously driven
+/// by its executor; the WebAssembly worker instead gives queued Tokio tasks a
+/// bounded poll after each JavaScript/LSP callback. This keeps preview actors
+/// and their data plane responsive without enabling unavailable I/O or timers.
+fn poll_tokio_background_tasks() {
+    #[cfg(target_arch = "wasm32")]
+    RUNTIMES.tokio_runtime.block_on(async {
+        for _ in 0..64 {
+            tokio::task::yield_now().await;
+        }
+    });
+}
 
 fn lsp_err(err: ResponseError) -> JsValue {
     to_js_value(&err).unwrap()

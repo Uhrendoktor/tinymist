@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 
 import { resolvePreviewerValue } from "../config";
 import { tinymist } from "../lsp";
+import { extensionState } from "../state";
 import { loadHTMLFile } from "../util";
 import type { ViewerWindowState } from "./preview-window-state";
 
@@ -130,6 +131,17 @@ export function getConfiguredPreviewer(): string | undefined {
   );
 }
 
+/**
+ * Browser-hosted Tinymist always uses the previewer compiled into its WASM asset.
+ * Native hosts preserve the user's configured previewer selection.
+ */
+export function previewerProviderForHost(
+  configuredProvider: string | undefined,
+  browserTransport: boolean,
+): string | undefined {
+  return browserTransport ? undefined : configuredProvider;
+}
+
 export function getConfiguredPreviewTarget(): PreviewTarget {
   return normalizePreviewTarget(
     vscode.workspace.getConfiguration("tinymist").get<string>("exportTarget"),
@@ -184,12 +196,20 @@ export async function resolveConfiguredPreviewer(
 export async function resolvePreviewer(
   context: vscode.ExtensionContext,
 ): Promise<ResolvedPreviewer> {
-  const provider = getConfiguredPreviewer();
+  const configuredProvider = getConfiguredPreviewer();
+  const browserTransport = extensionState.features.web;
+  // A browser-only VSIX has one supported preview implementation: the HTML
+  // and renderer embedded in Tinymist's own WASM package. Custom HTML and
+  // extension-provided previewers may depend on external servers, Node APIs,
+  // or their own assets, so they must not replace the bundled renderer.
+  const provider = previewerProviderForHost(configuredProvider, browserTransport);
   const previewTarget = getConfiguredPreviewTarget();
   const builtinPreviewerId = String(context.extension?.id ?? DEFAULT_PREVIEWER_EXTENSION_ID);
   const cacheKey = JSON.stringify({
     builtinPreviewSourceMode,
     builtinPreviewerId,
+    configuredProvider,
+    browserTransport,
     provider,
     previewTarget,
     trusted: vscode.workspace.isTrusted,
@@ -197,6 +217,21 @@ export async function resolvePreviewer(
   });
   if (cachedPreviewer?.key === cacheKey) {
     return cachedPreviewer.previewer;
+  }
+
+  if (
+    browserTransport &&
+    configuredProvider &&
+    parsePreviewerProvider(configuredProvider, builtinPreviewerId).kind !== "builtin"
+  ) {
+    const message =
+      "The WebAssembly extension uses the bundled Tinymist previewer; custom previewer providers are ignored.";
+    const warningKey = `${cacheKey}:${message}`;
+    if (lastWarningKey !== warningKey) {
+      lastWarningKey = warningKey;
+      console.warn(message);
+      void vscode.window.showWarningMessage(message);
+    }
   }
 
   const previewer = await resolveConfiguredPreviewer({

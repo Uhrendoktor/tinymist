@@ -1,4 +1,6 @@
 name: tinymist::ci
+
+# WASM PRs run native regression suites as well as browser-only VSIX and Web Host tests.
 on:
   push:
     branches:
@@ -15,6 +17,12 @@ on:
       - stable/**
   workflow_dispatch:
 
+# Keep at most one CI run active for a given PR or branch. A new push cancels
+# every older run for the same work instead of compiling stale commits.
+concurrency:
+  group: tinymist-browser-v2-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
 env:
   RUSTFLAGS: '-Dwarnings'
   CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
@@ -22,6 +30,7 @@ env:
 
 jobs:
   pre_build:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     permissions:
       actions: write
       contents: read
@@ -36,6 +45,7 @@ jobs:
           cancel_others: "true"
 
   checks-linux:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Check Clippy, Formatting, Completion, Documentation, and Tests (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -141,6 +151,7 @@ jobs:
         run: cargo test --package tinymist --lib --locked -- route::tests --show-output --ignored
 
   checks-windows:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Check Minimum Rust version and Tests (Windows)
     runs-on: windows-latest
     steps:
@@ -167,6 +178,7 @@ jobs:
         run: cargo test --workspace --features tinymist/system --locked -- --skip=e2e
 
   prepare-build:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     runs-on: "ubuntu-latest"
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -189,6 +201,7 @@ jobs:
       tag: ${{ needs.prepare-build.outputs.tag }}
 
   build:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     needs: [prepare-build] # , announce
     permissions:
       contents: write
@@ -199,6 +212,7 @@ jobs:
       targets: ${{ (!startsWith(github.ref, 'refs/tags/') && 'aarch64-apple-darwin,x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu') || 'all' }}
 
   build-intellij:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     uses: ./.github/workflows/build-intellij-plugin.yml
 
   release-intellij:
@@ -225,6 +239,7 @@ jobs:
           gh release upload "$RELEASE_TAG" "$plugin" --clobber
 
   checks-neovim:
+    if: ${{ !startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
     name: Neovim Spec Tests
     runs-on: ubuntu-latest
     needs: [prepare-build]
@@ -266,3 +281,179 @@ jobs:
         run: ./editors/neovim/bootstrap.sh test
         env:
           TINYMIST_BIN: ${{ github.workspace }}/prebuilts/tinymist
+
+  checks-wasm-browser:
+    if: ${{ startsWith(github.event.pull_request.head.ref || github.ref_name, 'wasm/') }}
+    name: Build and verify browser-only WASM VSIX
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    steps:
+      - name: Verify or provision host build and archive tools
+        run: |
+          set -euo pipefail
+
+          packages=()
+          if ! command -v cc >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1 && ! command -v clang >/dev/null 2>&1; then
+            packages+=(build-essential)
+          fi
+          if ! command -v unzip >/dev/null 2>&1; then
+            packages+=(unzip)
+          fi
+          # checkout@v4 needs Git >= 2.18 to keep the persistent workspace.
+          if ! command -v git >/dev/null 2>&1; then
+            packages+=(git)
+          fi
+
+          if [ "${#packages[@]}" -gt 0 ]; then
+            if command -v apt-get >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+              apt-get update
+              apt-get install -y --no-install-recommends "${packages[@]}"
+            elif command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends "${packages[@]}"
+            else
+              echo "::error::The self-hosted runner needs a host C compiler and unzip; install build-essential and unzip or grant root/sudo package access."
+              exit 1
+            fi
+          fi
+
+          if ! command -v cc >/dev/null 2>&1; then
+            compiler="$(command -v gcc || command -v clang)"
+            mkdir -p "$RUNNER_TEMP/cc-bin"
+            ln -sf "$compiler" "$RUNNER_TEMP/cc-bin/cc"
+            echo "$RUNNER_TEMP/cc-bin" >> "$GITHUB_PATH"
+            export PATH="$RUNNER_TEMP/cc-bin:$PATH"
+          fi
+
+          cc --version
+          unzip -v | head -n 1
+      - uses: actions/checkout@v4
+        with:
+          # Preserve the persistent runner's Cargo, JavaScript, asset, and
+          # browser caches between jobs.
+          clean: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+          components: rustfmt
+          cache: false
+      - name: Verify repository-pinned Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+          rustup target list --installed | grep -Fx wasm32-unknown-unknown
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Ensure pinned build tools in persistent runner cache
+        run: bash scripts/ensure-wasm-tools.sh
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile --prefer-offline
+      - name: Check formatting
+        run: cargo fmt --check --all
+      - name: Test browser previewer selection
+        run: yarn workspace tinymist test:unit run src/features/previewer-provider-selection.test.ts src/web/bridge-queue.test.ts
+      - name: Build and package browser-only Tinymist
+        run: yarn package:vscode:web
+
+      - name: Export browser-only VSIX to linked /artifacts volume
+        run: |
+          set -euo pipefail
+          version="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync("editors/vscode/package.json", "utf8")).version)')"
+          source="dist/tinymist-web-${version}.vsix"
+          destination="/artifacts/$(basename "$source")"
+          test -s "$source"
+
+          # Do not create a fallback directory on the runner's root filesystem:
+          # /artifacts must be the linked volume requested for this export.
+          test -d /artifacts || { echo "::error::The linked /artifacts volume is not mounted."; exit 1; }
+          mountpoint -q /artifacts || { echo "::error::/artifacts exists but is not a mount point; refusing to export to ephemeral runner storage."; exit 1; }
+
+          echo "Export mount and runner identity:"
+          id
+          stat -c 'path=%n mode=%A uid=%u gid=%g owner=%U:%G' /artifacts
+          volume_owner="$(stat -c '%u:%g' /artifacts)"
+          findmnt --target /artifacts --noheadings --output TARGET,SOURCE,FSTYPE,OPTIONS
+          mount_options="$(findmnt --target /artifacts --noheadings --output OPTIONS)"
+          case ",${mount_options}," in
+            *,ro,*)
+              echo "::error::The linked /artifacts volume is mounted read-only. Remount it read-write on the runner host."
+              exit 1
+              ;;
+          esac
+
+          export_as_root=0
+          if ! test -w /artifacts; then
+            if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+              export_as_root=1
+              echo "Runner user cannot write /artifacts directly; using non-interactive sudo for the export."
+            else
+              echo "::error::The /artifacts volume is writable but not writable by the runner user, and non-interactive sudo is unavailable."
+              exit 1
+            fi
+          fi
+
+          if [ "$export_as_root" -eq 1 ]; then
+            sudo -n sh -c 'probe="$(mktemp /artifacts/.tinymist-write-test.XXXXXX)" && rm -f "$probe"'
+            sudo -n install -m 0644 "$source" "$destination"
+            sudo -n sh -c 'sha256sum "$1" > "$2"' sh "$destination" "$destination.sha256"
+            sudo -n ln -sfn "$(basename "$destination")" /artifacts/tinymist-web-latest.vsix
+            sudo -n chown "$volume_owner" "$destination" "$destination.sha256"
+            sudo -n chown -h "$volume_owner" /artifacts/tinymist-web-latest.vsix
+          else
+            probe="$(mktemp /artifacts/.tinymist-write-test.XXXXXX)"
+            rm -f "$probe"
+            install -m 0644 "$source" "$destination"
+            sha256sum "$destination" > "$destination.sha256"
+            ln -sfn "$(basename "$destination")" /artifacts/tinymist-web-latest.vsix
+          fi
+
+          source_digest="$(sha256sum "$source" | cut -d ' ' -f 1)"
+          destination_digest="$(sha256sum "$destination" | cut -d ' ' -f 1)"
+          test "$source_digest" = "$destination_digest"
+          (cd /artifacts && sha256sum --check "$(basename "$destination").sha256")
+          cmp -s "$source" "$destination"
+          echo "Browser-only VSIX: $destination"
+          echo "SHA-256: $destination_digest"
+          {
+            echo "### Browser-only VSIX exported to linked /artifacts volume"
+            echo
+            echo "- File: $destination"
+            echo "- Latest link: /artifacts/tinymist-web-latest.vsix"
+            echo "- SHA-256: $destination_digest"
+            echo
+            echo "Volume mount:"
+            echo
+            echo "```"
+            findmnt --target /artifacts --noheadings --output TARGET,SOURCE,FSTYPE,OPTIONS
+            echo "```"
+          } >> "$GITHUB_STEP_SUMMARY"
+          ls -lh "$destination" "$destination.sha256" /artifacts/tinymist-web-latest.vsix
+      - name: Build browser-host integration test bundle
+        run: node scripts/build-vscode-web-tests.mjs
+      - name: Ensure Chromium and system dependencies are cached
+        run: |
+          set -euo pipefail
+          tools_cache="$HOME/.cache/tinymist-tools"
+          mkdir -p "$tools_cache"
+          if ! npx --yes --package=@vscode/test-web@0.0.81 playwright install --list 2>/dev/null | grep -qi chromium; then
+            if [ ! -f "$tools_cache/playwright-chromium-system-deps-v1" ]; then
+              npx --yes --package=@vscode/test-web@0.0.81 playwright install --with-deps chromium
+              touch "$tools_cache/playwright-chromium-system-deps-v1"
+            else
+              npx --yes --package=@vscode/test-web@0.0.81 playwright install chromium
+            fi
+          fi
+      - name: Test packaged extension in the VS Code Web Extension Host
+        run: |
+          npx --yes @vscode/test-web@0.0.81 \
+            --browserType=chromium \
+            --testRunnerDataDir="$HOME/.cache/tinymist-tools/vscode-test-web" \
+            --extensionDevelopmentPath=target/tinymist-vscode-web-package \
+            --extensionTestsPath=target/tinymist-vscode-web-package/out/web-test-runner.js \
+            --headless=true \
+            editors/vscode/e2e-workspaces/book
+      - name: Run native Tinymist regression tests on the local runner
+        if: always()
+        run: cargo test -p tinymist --no-default-features --features tinymist/system,tinymist/preview,tinymist/no-content-hint --locked -- --skip=e2e

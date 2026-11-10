@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 1,
+  "manifest": "wasm-assets.json",
+  "packages": [
+    {
+      "id": "preview/cetz-plot:0.1.4",
+      "url": "https://packages.typst.org/preview/cetz-plot-0.1.4.tar.gz",
+      "sha256": "13170258be0761701e57141081e1f6f029bc8967988f549a3b089289a1347936",
+      "license": "LGPL-3.0-or-later",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt",
+      "licenseSha256": "996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1"
+    },
+    {
+      "id": "preview/cetz:0.3.4",
+      "url": "https://packages.typst.org/preview/cetz-0.3.4.tar.gz",
+      "sha256": "4f4b5a8d311d519e749940a766fe50521e40c041129e1c91af0c42e61f307514",
+      "license": "LGPL-3.0-or-later",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt",
+      "licenseSha256": "996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1"
+    },
+    {
+      "id": "preview/cetz:0.5.2",
+      "url": "https://packages.typst.org/preview/cetz-0.5.2.tar.gz",
+      "sha256": "77cf8490114ae04c6e665a11efa691d284a0cadb9719771b5708c1197292f23f",
+      "license": "LGPL-3.0-or-later",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt",
+      "licenseSha256": "996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1"
+    },
+    {
+      "id": "preview/cetz:0.5.3",
+      "url": "https://packages.typst.org/preview/cetz-0.5.3.tar.gz",
+      "sha256": "79ca64869c60aefaf0eccc7e7371ab47cc6cb85bce1ad222e42cf1879c965b5f",
+      "license": "LGPL-3.0-or-later",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt",
+      "licenseSha256": "996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1"
+    },
+    {
+      "id": "preview/codly-languages:0.1.10",
+      "url": "https://packages.typst.org/preview/codly-languages-0.1.10.tar.gz",
+      "sha256": "0a3d6c542fc47ad5ec596dbf11b5ee7b7b5bdfae93704f6d0399a8342c96d2b8",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/codly:2.0.0",
+      "url": "https://packages.typst.org/preview/codly-2.0.0.tar.gz",
+      "sha256": "44f3e3cf26fca483f0e682f0159c5026af0a2dd22e55703a6bb2d4e337d5915e",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/ctheorems:2.0.0",
+      "url": "https://packages.typst.org/preview/ctheorems-2.0.0.tar.gz",
+      "sha256": "a47b415be91c434029420e6e52ae97e8a96cee82c7d4d559f418a41a95130096",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/elembic:1.1.1",
+      "url": "https://packages.typst.org/preview/elembic-1.1.1.tar.gz",
+      "sha256": "e3a8ec6b2ad5f43d93ae31dd5742de7256c57719675636179cd818f26ca7bb88",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/fletcher:0.5.8",
+      "url": "https://packages.typst.org/preview/fletcher-0.5.8.tar.gz",
+      "sha256": "a61883a4af4ca923a37c597900e674f40dad3f7bde3f2a3d8fe8042e6ca8a66b",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/glossarium:0.5.10",
+      "url": "https://packages.typst.org/preview/glossarium-0.5.10.tar.gz",
+      "sha256": "32b6ca30e5ff0d015aeff2ed1b9ba2bef5f628b53b611343294769b65966fc97",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/hydra:0.6.3",
+      "url": "https://packages.typst.org/preview/hydra-0.6.3.tar.gz",
+      "sha256": "9086250c10ca44618ef33b20b378b424f3d0d62b11b400a82826e07445f0d3ac",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/kalt:0.1.1",
+      "url": "https://packages.typst.org/preview/kalt-0.1.1.tar.gz",
+      "sha256": "96802123e755ceee7203cf2be548a603e1abb1272a5eda86fe66bbf5c4543809",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/lilaq:0.6.0",
+      "url": "https://packages.typst.org/preview/lilaq-0.6.0.tar.gz",
+      "sha256": "41e7839e9e4eaf5c0b5ec93f23d387233bce439fe226326b06c2fa01f2fc251f",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/lovelace:0.3.1",
+      "url": "https://packages.typst.org/preview/lovelace-0.3.1.tar.gz",
+      "sha256": "a589122439c8e4a4d65288ce6d5ab633fff47164b01214f0277117b6ca466a04",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/oxifmt:0.2.1",
+      "url": "https://packages.typst.org/preview/oxifmt-0.2.1.tar.gz",
+      "sha256": "16fac2923032c59727de01e84d42cac45e8790da28df56effca49f4de41b09d9",
+      "license": "MIT-0",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT-0.txt",
+      "licenseSha256": "59746d6285ffa44bfc7ecada352aa5d6a20dc8eab418a60ce091cc739012c135"
+    },
+    {
+      "id": "preview/oxifmt:1.0.0",
+      "url": "https://packages.typst.org/preview/oxifmt-1.0.0.tar.gz",
+      "sha256": "7d17a1fc8ad01740ec3cb2b03c7360a4225ff9318e5710765fa98ea6fd59594f",
+      "license": "MIT OR Apache-2.0",
+      "licenseUrl": "https://raw.githubusercontent.com/PgBiel/typst-oxifmt/main/LICENSE-MIT",
+      "licenseSha256": "14f5b5f40f5fbcf613fec86746979319afb7708e835776467c20b797b45864b5"
+    },
+    {
+      "id": "preview/physica:0.9.8",
+      "url": "https://packages.typst.org/preview/physica-0.9.8.tar.gz",
+      "sha256": "9cce5041efa1311bb48f120698e1d33778b64e33b2f631dc2714750eb12058a2",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/quill:0.8.0",
+      "url": "https://packages.typst.org/preview/quill-0.8.0.tar.gz",
+      "sha256": "c7e3ef187804680f8a7c7a0c9801c0e7a862253c9524c1d0a7610d40fadd27b9",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/sertyp:0.1.5",
+      "url": "https://packages.typst.org/preview/sertyp-0.1.5.tar.gz",
+      "sha256": "79c1d432302d668b7f27e4c8b4810978bf91ba07e423aed63333d87ac9735588",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/showybox:2.0.4",
+      "url": "https://packages.typst.org/preview/showybox-2.0.4.tar.gz",
+      "sha256": "2d415e38ad85143bb0ca7a41f47cdcbbf3186a002a9c637ce3df7ced7125858f",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/tidy:0.4.1",
+      "url": "https://packages.typst.org/preview/tidy-0.4.1.tar.gz",
+      "sha256": "bac779f5405be2cdad50d648fba729b7d9798201289194a95fd889ff4b44d823",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/tiptoe:0.4.0",
+      "url": "https://packages.typst.org/preview/tiptoe-0.4.0.tar.gz",
+      "sha256": "1be772c335902a7554b5164a5a4145bfd886867ac1b26478b74d5e4bf9eb6b3f",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/touying:0.8.0",
+      "url": "https://packages.typst.org/preview/touying-0.8.0.tar.gz",
+      "sha256": "7fe9eeeecc5614f21ee64ffe95c141d36ab1ae0b4ec961e6eabf13ab875ef5c1",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/unify:0.8.1",
+      "url": "https://packages.typst.org/preview/unify-0.8.1.tar.gz",
+      "sha256": "84c92fd52dd5327073b7a21b17201e49fbb3a6e23a3d179715c737f8e71c1964",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt",
+      "licenseSha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "id": "preview/uniwarn:0.1.1",
+      "url": "https://packages.typst.org/preview/uniwarn-0.1.1.tar.gz",
+      "sha256": "68247432dab1b165c16055411c0f0ec154a63d7fcf5ef0f65906269695d368ea",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/typst/packages/main/packages/preview/uniwarn/0.1.1/LICENSE",
+      "licenseSha256": "3d152ee831bedc4b5aecf5124d2b1fc6117624a02232cea291a16c7877544142"
+    },
+    {
+      "id": "preview/zero:0.6.1",
+      "url": "https://packages.typst.org/preview/zero-0.6.1.tar.gz",
+      "sha256": "87ffec0d591551ab5d1465c40582e4441876dd8f70ef88a2d577297f5977768f",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/typst/packages/main/packages/preview/zero/0.6.1/LICENSE",
+      "licenseSha256": "a0c185ee4f4b206ec18e409d9ddfa44553672808036eb97a5087c10a87ac687a"
+    },
+    {
+      "id": "preview/zero:0.7.1",
+      "url": "https://packages.typst.org/preview/zero-0.7.1.tar.gz",
+      "sha256": "1ba20eb40b859c9d6221a6b05d7eb94eb23203c749f74b48814ed2e64d4771e0",
+      "license": "MIT",
+      "licenseUrl": "https://raw.githubusercontent.com/Mc-Zen/zero/main/LICENSE",
+      "licenseSha256": "a0c185ee4f4b206ec18e409d9ddfa44553672808036eb97a5087c10a87ac687a"
+    }
+  ],
+  "fonts": []
+}

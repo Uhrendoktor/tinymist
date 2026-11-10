@@ -117,16 +117,24 @@ no-content-hint = ["reflexo-typst/no-content-hint"]
 battery = ["tinymist-std/battery"]
 # Enables DAP protocol.
 dap = ["sync-ls/dap", "tinymist-dap", "tinymist-debug"]
-# Enables preview server.
-preview = [
-    "http-body-util",
-    "hyper",
-    "hyper-util",
-    "hyper-tungstenite",
+# Enables the preview model, actors, and document frontend assets without
+# selecting a particular transport.
+preview-core = [
     "tinymist-assets/typst-preview",
     "tinymist-preview",
     "tinymist-preview/clap",
 ]
+# Enables the native HTTP/WebSocket preview server.
+preview = [
+    "preview-core",
+    "http-body-util",
+    "hyper",
+    "hyper-util",
+    "hyper-tungstenite",
+]
+# Enables the preview core for browser builds. The browser data-plane adapter
+# is a separate integration and must not pull in TCP/Hyper dependencies.
+preview-web = ["web", "preview-core"]
 # Enables tinymist.lock
 lock = []
 # Enables export command.

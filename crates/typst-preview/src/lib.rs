@@ -234,10 +234,20 @@ impl Previewer {
 
         let data_plane_handle = tokio::spawn(async move {
             let mut alive_cnt = 0;
-            let mut shutdown_bell = tokio::time::interval(idle_timeout);
+            // The browser WASM runtime has no Tokio timer driver. Keep the
+            // native idle-shutdown timer, but use a permanently pending timer
+            // branch in WASM; browser preview lifetime is controlled by the
+            // preview actor's explicit stop request instead.
+            let mut shutdown_bell = if cfg!(target_arch = "wasm32") {
+                None
+            } else {
+                Some(tokio::time::interval(idle_timeout))
+            };
             loop {
                 if shutdown_tx.is_some() {
-                    shutdown_bell.reset();
+                    if let Some(shutdown_bell) = shutdown_bell.as_mut() {
+                        shutdown_bell.reset();
+                    }
                 }
                 tokio::select! {
                     Some(()) = shutdown_data_plane_rx.recv() => {
@@ -251,7 +261,15 @@ impl Previewer {
                     _ = alive_rx.recv() => {
                         alive_cnt -= 1;
                     }
-                    _ = shutdown_bell.tick(), if alive_cnt == 0 && shutdown_tx.is_some() => {
+                    _ = async {
+                        if let Some(shutdown_bell) = shutdown_bell.as_mut() {
+                            // Interval::tick returns an Instant; discard it so
+                            // both branches of this async block return unit.
+                            let _ = shutdown_bell.tick().await;
+                        } else {
+                            std::future::pending::<()>().await;
+                        }
+                    }, if alive_cnt == 0 && shutdown_tx.is_some() => {
                         let shutdown_tx = shutdown_tx.expect("scheduled shutdown without shutdown_tx");
                         log::info!(
                             "Data plane server has been idle for {idle_timeout:?}, shutting down."

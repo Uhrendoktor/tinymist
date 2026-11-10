@@ -3,6 +3,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import {
+  base64Encode,
   DisposeList,
   getSensibleTextEditorColumn,
   getTargetViewColumn,
@@ -148,32 +149,83 @@ export function previewActivate(context: vscode.ExtensionContext, isCompat: bool
     }),
     vscode.commands.registerCommand("tinymist.browsingPreview", launchBrowsingPreview),
     vscode.commands.registerCommand("typst-preview.preview", launch("webview", "doc")),
-    vscode.commands.registerCommand("typst-preview.browser", launch("browser", "doc")),
     vscode.commands.registerCommand("typst-preview.preview-slide", launch("webview", "slide")),
-    vscode.commands.registerCommand("typst-preview.browser-slide", launch("browser", "slide")),
+    ...(!extensionState.features.web
+      ? [
+          vscode.commands.registerCommand("typst-preview.browser", launch("browser", "doc")),
+          vscode.commands.registerCommand("typst-preview.browser-slide", launch("browser", "slide")),
+        ]
+      : []),
     vscode.commands.registerCommand("tinymist.previewDev", launchDevPreview("doc")),
     vscode.commands.registerCommand("tinymist.previewDevSlide", launchDevPreview("slide")),
     ...(isCompat
       ? [
-          vscode.commands.registerCommand("typst-preview.eject", ejectPreviewPanelCompat),
+          ...(!extensionState.features.web
+            ? [vscode.commands.registerCommand("typst-preview.eject", ejectPreviewPanelCompat)]
+            : []),
           vscode.commands.registerCommand("typst-preview.revealDocument", revealDocumentCompat),
           vscode.commands.registerCommand("typst-preview.sync", panelSyncScrollCompat),
         ]
       : [
-          vscode.commands.registerCommand("typst-preview.eject", ejectPreviewPanelLsp),
+          ...(!extensionState.features.web
+            ? [vscode.commands.registerCommand("typst-preview.eject", ejectPreviewPanelLsp)]
+            : []),
           vscode.commands.registerCommand("typst-preview.revealDocument", revealDocumentLsp),
           vscode.commands.registerCommand("typst-preview.sync", panelSyncScrollLsp),
         ]),
     vscode.commands.registerCommand("tinymist.doInspectPreviewState", () => {
-      const tasks = Array.from(activeTask.values()).map((t) => {
-        return {
-          panel: !!t.panel,
-          taskId: t.taskId,
-          source: t.previewSource,
-        };
-      });
+      const tasks = Array.from(activeTask.values()).map((t) => ({
+        panel: !!t.panel,
+        panelVisible: t.panel?.visible ?? false,
+        panelActive: t.panel?.active ?? false,
+        taskId: t.taskId,
+        source: t.previewSource,
+        documentReady: t.browserTelemetry?.documentReady ?? false,
+        bootstrapStatePresent: t.browserTelemetry?.bootstrapStatePresent ?? false,
+        bootstrapBrowserTransport: t.browserTelemetry?.bootstrapBrowserTransport ?? false,
+        bootstrapHref: t.browserTelemetry?.bootstrapHref,
+        frontendError: t.browserTelemetry?.frontendError,
+        frontendStarted: t.browserTelemetry?.frontendStarted ?? false,
+        browserTransportEnabled: t.browserTelemetry?.browserTransportEnabled ?? false,
+        webviewSocketReady: t.browserTelemetry?.webviewSocketReady ?? false,
+        webviewFramesReceived: t.browserTelemetry?.webviewFramesReceived ?? 0,
+        frontendFramesParsed: t.browserTelemetry?.frontendFramesParsed ?? 0,
+        lastFrontendFrameKind: t.browserTelemetry?.lastFrontendFrameKind,
+        lastFrontendFrameBytes: t.browserTelemetry?.lastFrontendFrameBytes,
+        frontendFrameError: t.browserTelemetry?.frontendFrameError,
+        frontendTaskId: t.browserTelemetry?.frontendTaskId,
+        framesFromServer: t.browserTelemetry?.framesFromServer ?? 0,
+        framesToServer: t.browserTelemetry?.framesToServer ?? 0,
+        renderedFrames: t.browserTelemetry?.renderedFrames ?? 0,
+        renderMetrics: t.browserTelemetry?.renderMetrics,
+      }));
       return {
         tasks,
+        outlineItems: latestPreviewOutlineItems.map(({ title, span, position }) => ({
+          title,
+          span,
+          position,
+        })),
+      };
+    }),
+    vscode.commands.registerCommand("tinymist.doInspectPreviewHtml", async () => {
+      const html = await tinymist.getResource("/preview/index.html");
+      if (typeof html !== "string") {
+        return { isString: false };
+      }
+      const externalScripts = [
+        ...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g),
+      ].map((match) => match[1]);
+      return {
+        isString: true,
+        length: html.length,
+        statePlaceholder: html.includes("preview-arg:state:"),
+        documentReady: html.includes("tinymist-preview-document-ready"),
+        frontendReady: html.includes("tinymist-preview-frontend-ready"),
+        browserTransport: html.includes("browserTransport"),
+        assetsInline: externalScripts.length === 0 && !html.includes("typst-webview-assets"),
+        externalScripts,
+        assetReferences: [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)].map((match) => match[1]).slice(0, 20),
       };
     }),
     vscode.commands.registerCommand("tinymist.doDisposePreview", ({ taskId }) => {
@@ -316,6 +368,54 @@ function getPreviewConfCompat<T>(s: string) {
 /**
  * The arguments for launching the preview in a builtin vscode webview.
  */
+interface BrowserPreviewRenderMetrics {
+  appWidth: number;
+  appHeight: number;
+  svgCount: number;
+  visibleSvgCount: number;
+  svgWidth: number;
+  svgHeight: number;
+  contentElementCount: number;
+  visibleContentElementCount: number;
+  markupLength: number;
+  renderRootTag: string;
+  renderMode: string;
+  renderRootWidth: number;
+  renderRootHeight: number;
+  nonWhitePaintElementCount: number;
+  darkPaintElementCount: number;
+  bluePaintElementCount: number;
+  pageCount: number;
+  paintedGlyphElementCount: number;
+  darkTextGlyphElementCount: number;
+  blueTextGlyphElementCount: number;
+  paintSamples: string[];
+  renderError?: string;
+}
+
+interface BrowserPreviewTelemetry {
+  frontendStarted: boolean;
+  browserTransportEnabled?: boolean;
+  webviewSocketReady: boolean;
+  webviewFramesReceived: number;
+  frontendFramesParsed: number;
+  lastFrontendFrameKind?: string;
+  lastFrontendFrameBytes?: number;
+  frontendFrameError?: string;
+  bootstrapStatePresent?: boolean;
+  bootstrapBrowserTransport?: boolean;
+  bootstrapHref?: string;
+  frontendTaskId?: string;
+  panelVisible?: boolean;
+  panelActive?: boolean;
+  documentReady?: boolean;
+  frontendError?: string;
+  framesFromServer: number;
+  framesToServer: number;
+  renderedFrames: number;
+  renderMetrics?: BrowserPreviewRenderMetrics;
+}
+
 interface OpenPreviewInWebViewArgs {
   /**
    * The extension context.
@@ -325,16 +425,18 @@ interface OpenPreviewInWebViewArgs {
    * The preview task arguments.
    */
   task: LaunchInWebViewTask;
+  /** Task id assigned to the Rust preview actor. */
+  taskId: string;
+  /** Whether this preview uses the browser Webview/LSP data-plane bridge. */
+  browserTransport: boolean;
+  /** Browser preview diagnostics; omitted for the native transport. */
+  browserTelemetry?: BrowserPreviewTelemetry;
   /**
    * The active editor owning *typst language document*.
    */
   activeEditor: vscode.TextEditor;
-  /**
-   * The port number of the data plane server.
-   *
-   * The server is already opened by the {@link launchImpl} function.
-   */
-  dataPlanePort: string | number;
+  /** Native data-plane port. Omitted for browser previews. */
+  dataPlanePort?: string | number;
   /**
    * The existing webview panel to reuse.
    */
@@ -363,6 +465,9 @@ export interface OpenedPreviewWebview {
 export async function openPreviewInWebView({
   context,
   task,
+  taskId,
+  browserTransport,
+  browserTelemetry,
   activeEditor,
   dataPlanePort,
   webviewPanel,
@@ -401,12 +506,133 @@ export async function openPreviewInWebView({
     localResourceRoots: previewer.localResourceRoots,
   };
 
+  // The preview can emit its first document frame before the Webview module
+  // finishes initializing. Hold those frames until the frontend WebSocket shim
+  // has opened a receiving socket; merely assigning the HTML or receiving its
+  // document-ready notification is too early.
+  let webviewSocketReady = false;
+  const pendingWebviewFrames: BrowserPreviewDataMessage[] = [];
+  const postBrowserFrame = (message: BrowserPreviewDataMessage) => {
+    if (browserTelemetry) {
+      browserTelemetry.framesFromServer += 1;
+    }
+    void panel.webview.postMessage({
+      type: "tinymist-preview-frame",
+      taskId,
+      message,
+    });
+  };
+  const browserMessageListener = browserTransport
+    ? tinymist.registerBrowserPreviewMessageListener(taskId, (message) => {
+        if (!webviewSocketReady) {
+          if (pendingWebviewFrames.length >= 512) {
+            pendingWebviewFrames.shift();
+          }
+          pendingWebviewFrames.push(message);
+          return;
+        }
+        postBrowserFrame(message);
+      })
+    : undefined;
+  const browserRequestListener = browserTransport
+    ? panel.webview.onDidReceiveMessage((message) => {
+        if (
+          message?.type === "tinymist-preview-websocket-ready" &&
+          message.taskId === taskId
+        ) {
+          webviewSocketReady = true;
+          if (browserTelemetry) {
+            browserTelemetry.webviewSocketReady = true;
+          }
+          for (const frame of pendingWebviewFrames.splice(0)) {
+            postBrowserFrame(frame);
+          }
+          return;
+        }
+        if (
+          message?.type === "tinymist-preview-websocket-frame-received" &&
+          message.taskId === taskId
+        ) {
+          if (browserTelemetry) browserTelemetry.webviewFramesReceived += 1;
+          return;
+        }
+        if (
+          message?.type === "tinymist-preview-frame-parsed" &&
+          message.taskId === taskId
+        ) {
+          if (browserTelemetry) {
+            browserTelemetry.frontendFramesParsed += 1;
+            browserTelemetry.lastFrontendFrameKind = String(message.frameKind ?? "");
+            browserTelemetry.lastFrontendFrameBytes = Number(message.byteLength ?? 0);
+          }
+          return;
+        }
+        if (message?.type === "tinymist-preview-frame-error" && message.taskId === taskId) {
+          const error = String(message.message ?? "Unknown preview frame error");
+          if (browserTelemetry) browserTelemetry.frontendFrameError = error;
+          console.error("Tinymist preview frame processing failed:", error);
+          return;
+        }
+        if (message?.type === "tinymist-preview-document-ready") {
+          if (browserTelemetry) {
+            browserTelemetry.documentReady = true;
+            browserTelemetry.bootstrapStatePresent = message.statePresent === true;
+            browserTelemetry.bootstrapBrowserTransport = message.browserTransport === true;
+            browserTelemetry.bootstrapHref =
+              typeof message.href === "string" ? message.href : undefined;
+          }
+          return;
+        }
+        if (message?.type === "tinymist-preview-error") {
+          const error = String(message.message ?? "Unknown Webview error");
+          if (browserTelemetry) browserTelemetry.frontendError = error;
+          console.error("Tinymist preview Webview failed:", error);
+          return;
+        }
+        if (message?.type === "tinymist-preview-frontend-ready") {
+          if (browserTelemetry) {
+            browserTelemetry.frontendStarted = true;
+            browserTelemetry.browserTransportEnabled = message.browserTransport === true;
+            browserTelemetry.frontendTaskId =
+              typeof message.taskId === "string" ? message.taskId : undefined;
+          }
+          return;
+        }
+        if (message?.taskId !== taskId) {
+          return;
+        }
+        if (message.type === "tinymist-preview-started") {
+          if (browserTelemetry) {
+            browserTelemetry.frontendStarted = true;
+          }
+          return;
+        }
+        if (message.type === "tinymist-preview-rendered") {
+          if (browserTelemetry) {
+            browserTelemetry.renderedFrames += 1;
+            if (message.metrics && typeof message.metrics === "object") {
+              browserTelemetry.renderMetrics = message.metrics as BrowserPreviewRenderMetrics;
+            }
+          }
+          return;
+        }
+        if (message.type === "tinymist-preview-frame" && message.message) {
+          if (browserTelemetry) {
+            browserTelemetry.framesToServer += 1;
+          }
+          tinymist.sendBrowserPreviewMessage({ ...message.message, taskId });
+        }
+      })
+    : undefined;
+
   const previewState: PersistPreviewState = {
     mode: task.mode,
     isNotPrimary: !!task.isNotPrimary,
     isBrowsing: !!task.isBrowsing,
     isDev: !!task.isDev,
+    browserTransport,
     uri: activeEditor.document.uri.toString(),
+    taskId,
   };
 
   const updateActivePanel = () => {
@@ -427,24 +653,41 @@ export async function openPreviewInWebView({
     if (extensionState.getFocusingPreviewPanelContext()?.panel === panel) {
       extensionState.mut.focusingPreviewPanelContext = undefined;
     }
+    browserMessageListener?.dispose();
+    browserRequestListener?.dispose();
     await panelDispose();
     console.log("killed preview services");
   });
 
   // Determines arguments for the preview HTML.
   const previewMode = task.mode === "doc" ? "Doc" : "Slide";
-  const previewStateEncoded = Buffer.from(JSON.stringify(previewState), "utf-8").toString("base64");
+  const previewStateEncoded = base64Encode(JSON.stringify(previewState));
 
   // Substitutes arguments in the HTML content.
   let html = rewritePreviewAssetRoot(previewer, panel.webview);
   html = html.replace("preview-arg:previewMode:Doc", `preview-arg:previewMode:${previewMode}`);
   html = html.replace("preview-arg:state:", `preview-arg:state:${previewStateEncoded}`);
-  // Forwards the localhost port to the external URL. Since WebSocket runs over HTTP, it should be fine.
-  // https://code.visualstudio.com/api/advanced-topics/remote-extensions#forwarding-localhost
-  html = html.replace("ws://127.0.0.1:23625", await externalDataPlaneHost(dataPlanePort));
+  if (!browserTransport) {
+    // Forward the localhost port to the external URL for native WebSocket previews.
+    if (dataPlanePort === undefined) {
+      throw new Error("Native preview data-plane port was not provided");
+    }
+    html = html.replace("ws://127.0.0.1:23625", await externalDataPlaneHost(dataPlanePort));
+  }
 
   // Sets the HTML content to the webview panel.
   // This will reload the webview panel if it's already opened.
+  if (browserTelemetry) {
+    browserTelemetry.panelVisible = panel.visible;
+    browserTelemetry.panelActive = panel.active;
+  }
+  // Some browser-host test layouts do not leave a newly created second-column
+  // Webview visible. Reveal it explicitly so its scripts and message channel
+  // are initialized even when the source editor was opened in column one.
+  if (browserTransport) {
+    panel.reveal(panel.viewColumn, true);
+  }
+
   panel.webview.html = html;
   return {
     panel,
@@ -463,6 +706,7 @@ interface TaskControlBlock {
   taskId: string;
   /// previewer metadata
   previewSource?: PreviewerSourceMetadata;
+  browserTelemetry?: BrowserPreviewTelemetry;
   /// cleanup routine for previews that do not own a webview panel
   dispose?: () => void;
 }
@@ -471,6 +715,11 @@ const activeTask = new Map<vscode.TextDocument, TaskControlBlock>();
 async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask) {
   const { kind, context, editor, bindDocument, webviewPanel, isBrowsing, isDev, isNotPrimary } =
     task;
+  const browserTransport = extensionState.features.web;
+
+  if (browserTransport && kind === "browser") {
+    throw new Error("External-browser preview requires a native local HTTP server; use the integrated Webview preview in the WebAssembly extension.");
+  }
 
   /**
    * Can only open one preview for one document.
@@ -488,13 +737,29 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
   }
 
   const taskId = Math.random().toString(36).substring(7);
+  const browserTelemetry: BrowserPreviewTelemetry | undefined = browserTransport
+    ? {
+        frontendStarted: false,
+        browserTransportEnabled: false,
+        webviewSocketReady: false,
+        webviewFramesReceived: 0,
+        frontendFramesParsed: 0,
+        lastFrontendFrameKind: undefined,
+        lastFrontendFrameBytes: undefined,
+        frontendFrameError: undefined,
+        frontendTaskId: undefined,
+        framesFromServer: 0,
+        framesToServer: 0,
+        renderedFrames: 0,
+      }
+    : undefined;
   const filePath = bindDocument.uri.fsPath;
 
   const disposes = new DisposeList();
   registerPreviewTaskDispose(taskId, disposes);
 
   const { dataPlanePort, staticServerPort, isPrimary } = await invokeLspCommand();
-  if (!dataPlanePort || !staticServerPort) {
+  if (!browserTransport && (!dataPlanePort || !staticServerPort)) {
     disposes.dispose();
     throw new Error(`Failed to launch preview ${filePath}`);
   }
@@ -513,7 +778,7 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
   }
   const isHandledByPreviewer = kind === "webview" && !!resolvedPreviewer?.handlePreview;
 
-  if (isPrimary && !isHandledByPreviewer) {
+  if (isPrimary && !isHandledByPreviewer && !browserTransport) {
     const connectUrl = translateExternalURL(`ws://127.0.0.1:${dataPlanePort}`);
     contentPreviewProvider.then((p) => p.postActivate(connectUrl));
     disposes.add(() => {
@@ -526,10 +791,15 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
   switch (kind) {
     case "webview": {
       if (resolvedPreviewer?.handlePreview) {
+        if (browserTransport) {
+          disposes.dispose();
+          await tinymist.killPreview(taskId);
+          throw new Error("Custom previewer handlers that require a native WebSocket host are not available in the browser extension.");
+        }
         try {
           const dataPlaneHost = resolvedPreviewer.preferExternalDataPlaneHost
-            ? await externalDataPlaneHost(dataPlanePort)
-            : localDataPlaneHost(dataPlanePort);
+            ? await externalDataPlaneHost(dataPlanePort!)
+            : localDataPlaneHost(dataPlanePort!);
           const previewHandle = await resolvedPreviewer.handlePreview({
             taskId,
             documentUri: bindDocument.uri.toString(),
@@ -537,8 +807,8 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
             mode: task.mode,
             target: resolvedPreviewer.source.target ?? "paged",
             dataPlaneHost,
-            dataPlanePort,
-            staticServerPort,
+            dataPlanePort: dataPlanePort!,
+            staticServerPort: staticServerPort!,
             initialWindowState: loadStoredViewerWindowState(context),
             isBrowsing: !!isBrowsing,
             isPrimary: !!isPrimary,
@@ -556,6 +826,9 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
       const openedPreview = await openPreviewInWebView({
         context,
         task,
+        taskId,
+        browserTransport,
+        browserTelemetry,
         activeEditor: editor,
         dataPlanePort,
         webviewPanel,
@@ -581,6 +854,7 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
     panel,
     taskId,
     previewSource,
+    browserTelemetry,
     dispose: () => disposes.dispose(),
   });
   disposes.add(() => {
@@ -598,7 +872,9 @@ async function launchPreviewLsp(task: LaunchInBrowserTask | LaunchInWebViewTask)
 
     console.log(`Preview Command ${filePath}`);
     const previewInSlideModeArgs = task.mode === "slide" ? ["--preview-mode=slide"] : [];
-    const dataPlaneHostArgs = !isDev ? ["--data-plane-host", "127.0.0.1:0"] : [];
+    // The browser preview uses the LSP/Webview data plane, never a localhost TCP listener.
+    const dataPlaneHostArgs =
+      !isDev && !browserTransport ? ["--data-plane-host", "127.0.0.1:0"] : [];
 
     const previewArgs = [
       "--task-id",
@@ -811,7 +1087,10 @@ export enum ScrollSyncModeEnum {
 
 export type ScrollSyncMode = "never" | "onSelectionChangeByMouse" | "onSelectionChange";
 
+let latestPreviewOutlineItems: OutlineItemData[] = [];
+
 export function previewProcessOutline(outlineData: any) {
+  latestPreviewOutlineItems = Array.isArray(outlineData?.items) ? outlineData.items : [];
   contentPreviewProvider.then((p) => p.postOutlineItem(outlineData /* Outline */));
   outlineProvider.then((p) => p.postOutlineItem(outlineData /* Outline */));
 }
@@ -1024,10 +1303,12 @@ export class OutlineItem extends vscode.TreeItem {
 }
 
 interface PersistPreviewState {
+  taskId?: string;
   mode: "doc" | "slide";
   isNotPrimary: boolean;
   isBrowsing: boolean;
   isDev: boolean;
+  browserTransport: boolean;
   uri: string;
 }
 

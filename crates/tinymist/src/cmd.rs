@@ -130,17 +130,22 @@ impl ServerState {
     }
 
     /// Starts a preview instance.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub fn do_start_preview(
         &mut self,
         mut args: Vec<JsonValue>,
     ) -> SchedulableResponse<crate::tool::preview::StartPreviewResponse> {
         let cli_args = get_arg_or_default!(args[0] as Vec<String>);
-        self.start_preview(cli_args, crate::tool::preview::PreviewKind::Regular)
+        log::info!("[browser-preview-debug] do_start_preview command invoked args={cli_args:?}");
+        let response = self.start_preview(cli_args, crate::tool::preview::PreviewKind::Regular);
+        if let Err(err) = &response {
+            log::error!("[browser-preview-debug] do_start_preview setup failed: {err:?}");
+        }
+        response
     }
 
     /// Starts a preview instance for browsing.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub fn browse_preview(
         &mut self,
         mut args: Vec<JsonValue>,
@@ -159,7 +164,7 @@ impl ServerState {
     /// - The preview follows an inferred focused file from the requests from
     ///   the client.
     /// - The preview is opened in the default browser.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub fn default_preview(
         &mut self,
         mut _args: Vec<JsonValue>,
@@ -178,7 +183,7 @@ impl ServerState {
     }
 
     /// Kill a preview instance.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub fn kill_preview(&mut self, mut args: Vec<JsonValue>) -> AnySchedulableResponse {
         let task_id = get_arg!(args[0] as String);
 
@@ -190,7 +195,7 @@ impl ServerState {
     }
 
     /// Scroll preview instances.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub fn scroll_preview(&mut self, mut args: Vec<JsonValue>) -> AnySchedulableResponse {
         use tinymist_preview::ControlPlaneMessage;
 

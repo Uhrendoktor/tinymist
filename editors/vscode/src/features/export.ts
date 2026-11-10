@@ -11,6 +11,7 @@ import type {
 import type { IContext } from "../context";
 import { l10nMsg } from "../l10n";
 import { type ExportResponse, tinymist } from "../lsp";
+import { extensionState } from "../state";
 
 /// These are names of the export functions in the LSP client, e.g. `exportPdf`, `exportHtml`.
 export type ExportKind =
@@ -24,6 +25,12 @@ export type ExportKind =
   | "Text"
   | "Query";
 
+interface BrowserExportTaskResult {
+  sourcePath: string;
+  path: string | null;
+  data: string;
+}
+
 export function exportActivate(context: IContext) {
   context.subscriptions.push(
     commands.registerCommand("tinymist.exportCurrentPdf", commandExportCurrentPdf),
@@ -33,6 +40,28 @@ export function exportActivate(context: IContext) {
     commands.registerCommand("tinymist.showPdf", () => commandShow("Pdf")),
     commands.registerCommand("tinymist.exportCurrentFileAndShow", commandAskAndShow),
   );
+
+  if (extensionState.features.web) {
+    void tinymist.getClient().then(
+      (client) => {
+        context.subscriptions.push(
+          client.onNotification(
+            "tinymist/browserExportTaskResult",
+            (event: BrowserExportTaskResult) => {
+              void persistAutomaticBrowserExport(event).catch((error: unknown) => {
+                const message = error instanceof Error ? error.message : String(error);
+                console.error("Tinymist automatic browser export failed:", error);
+                void vscode.window.showErrorMessage(
+                  `Tinymist automatic export failed: ${message}`,
+                );
+              });
+            },
+          ),
+        );
+      },
+      (error: unknown) => console.error("Could not register browser export notification:", error),
+    );
+  }
 }
 
 export async function commandExportCurrentPdf(): Promise<ExportResponse | null> {
@@ -169,7 +198,10 @@ async function askAndRun<T>(
   title: string,
   cb: (meta: QuickExportFormatMeta) => T,
 ): Promise<T | undefined> {
-  const picked = await vscode.window.showQuickPick(quickExports, { title });
+  const availableExports = extensionState.features.web
+    ? quickExports.filter((format) => format.exportKind !== "Bundle")
+    : quickExports;
+  const picked = await vscode.window.showQuickPick(availableExports, { title });
 
   if (picked === undefined) {
     return;
@@ -272,12 +304,209 @@ export async function commandExport(
   opts?: ExportOpts,
   actionOpts?: ExportActionOpts,
 ): Promise<ExportResponse | null> {
-  const uri = vscode.window.activeTextEditor?.document.uri.fsPath;
-  if (!uri) {
+  if (extensionState.features.web && kind === "Bundle") {
+    await vscode.window.showErrorMessage(
+      "Directory-based Typst Bundle export is not available in the browser-only extension.",
+    );
     return null;
   }
 
-  return await tinymist[`export${kind}`](uri, opts, actionOpts);
+  const sourceUri = vscode.window.activeTextEditor?.document.uri;
+  if (!sourceUri) {
+    return null;
+  }
+
+  const response = await tinymist[`export${kind}`](
+    sourceUri.fsPath,
+    opts,
+    extensionState.features.web ? { ...actionOpts, write: false, open: false } : actionOpts,
+  );
+
+  if (!extensionState.features.web || !response || "message" in response) {
+    return response;
+  }
+
+  const persisted = await persistBrowserExport(response, kind, sourceUri);
+  return persisted ? response : null;
+}
+
+const EXPORT_EXTENSIONS: Record<ExportKind, string> = {
+  Pdf: "pdf",
+  Html: "html",
+  Bundle: "zip",
+  Svg: "svg",
+  Png: "png",
+  Markdown: "md",
+  TeX: "tex",
+  Text: "txt",
+  Query: "json",
+};
+
+function decodeExportData(encoded: string): Uint8Array {
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function defaultExportPath(sourceUri: vscode.Uri, kind: ExportKind): string {
+  const sourcePath = sourceUri.path;
+  const slash = sourcePath.lastIndexOf("/");
+  const filename = sourcePath.slice(slash + 1);
+  const dot = filename.lastIndexOf(".");
+  const stem = dot > 0 ? filename.slice(0, dot) : filename;
+  const directory = slash >= 0 ? sourcePath.slice(0, slash + 1) : "/";
+  return `${directory}${stem}.${EXPORT_EXTENSIONS[kind]}`;
+}
+
+function withPageSuffix(filePath: string, page: number): string {
+  const slash = filePath.lastIndexOf("/");
+  const dot = filePath.lastIndexOf(".");
+  const insertAt = dot > slash ? dot : filePath.length;
+  return `${filePath.slice(0, insertAt)}-page-${page}${filePath.slice(insertAt)}`;
+}
+
+/**
+ * Maps canonical file paths returned by the WASM language server back to the
+ * VS Code workspace filesystem provider. Browser workspaces may use virtual
+ * schemes such as vscode-vfs or vscode-test-web instead of file:.
+ */
+function workspaceUriForExportPath(sourceUri: vscode.Uri, serverPath: string): vscode.Uri {
+  if (sourceUri.scheme === "file") {
+    return vscode.Uri.file(serverPath);
+  }
+
+  const isWithinFolder = (candidate: string, folderPath: string) => {
+    let root = folderPath || "/";
+    while (root.length > 1 && root.endsWith("/")) {
+      root = root.slice(0, -1);
+    }
+    return candidate === root || candidate.startsWith(root === "/" ? "/" : `${root}/`);
+  };
+
+  const folder = (vscode.workspace.workspaceFolders ?? [])
+    .filter(
+      ({ uri }) =>
+        uri.scheme === sourceUri.scheme &&
+        uri.authority === sourceUri.authority &&
+        isWithinFolder(sourceUri.path, uri.path) &&
+        isWithinFolder(serverPath, uri.path),
+    )
+    .sort((left, right) => right.uri.path.length - left.uri.path.length)[0];
+
+  if (folder) {
+    return folder.uri.with({ path: serverPath, query: "", fragment: "" });
+  }
+
+  // Preserve the source provider as a safe fallback; never silently switch a
+  // virtual workspace export to an unrelated file: provider.
+  return sourceUri.with({ path: serverPath, query: "", fragment: "" });
+}
+
+function workspaceUriForServerPath(serverPath: string): vscode.Uri {
+  const isWithinFolder = (candidate: string, folderPath: string) => {
+    let root = folderPath || "/";
+    while (root.length > 1 && root.endsWith("/")) {
+      root = root.slice(0, -1);
+    }
+    return candidate === root || candidate.startsWith(root === "/" ? "/" : `${root}/`);
+  };
+
+  const folder = (vscode.workspace.workspaceFolders ?? [])
+    .filter(({ uri }) => isWithinFolder(serverPath, uri.path))
+    .sort((left, right) => right.uri.path.length - left.uri.path.length)[0];
+  if (!folder) {
+    throw new Error(`No workspace filesystem provider owns automatic export source path: ${serverPath}`);
+  }
+  return folder.uri.with({ path: serverPath, query: "", fragment: "" });
+}
+
+async function persistAutomaticBrowserExport(event: BrowserExportTaskResult): Promise<void> {
+  const sourceUri = workspaceUriForServerPath(event.sourcePath);
+  const targetPath = event.path || defaultExportPath(sourceUri, "Pdf");
+  const targetUri = workspaceUriForExportPath(sourceUri, targetPath);
+  await writeBrowserFile(targetUri, event.data);
+  console.log(`Tinymist automatic browser PDF export persisted to ${targetUri.toString()}`);
+}
+
+async function writeBrowserFile(targetUri: vscode.Uri, encoded: string): Promise<void> {
+  const separator = targetUri.path.lastIndexOf("/");
+  const parent = separator > 0 ? targetUri.path.slice(0, separator) : "/";
+  await vscode.workspace.fs.createDirectory(
+    targetUri.with({ path: parent, query: "", fragment: "" }),
+  );
+  await vscode.workspace.fs.writeFile(targetUri, decodeExportData(encoded));
+}
+
+async function persistBrowserExport(
+  response: ExportResponse,
+  kind: ExportKind,
+  sourceUri: vscode.Uri,
+): Promise<boolean> {
+  const defaultPath = defaultExportPath(sourceUri, kind);
+  const choosePath = async (suggestedPath: string): Promise<vscode.Uri | undefined> => {
+    return await vscode.window.showSaveDialog({
+      defaultUri: workspaceUriForExportPath(sourceUri, suggestedPath),
+      saveLabel: l10nMsg("Save export"),
+      filters: { [EXPORT_EXTENSIONS[kind].toUpperCase()]: [EXPORT_EXTENSIONS[kind]] },
+    });
+  };
+
+  if ("items" in response) {
+    const items = response.items;
+    if (items.length === 0) {
+      return false;
+    }
+
+    const existingPaths = items.map((item) => item.path);
+    const allPathsAreDistinct =
+      existingPaths.every((itemPath): itemPath is string => !!itemPath) &&
+      new Set(existingPaths).size === existingPaths.length;
+
+    if (allPathsAreDistinct) {
+      for (const item of items) {
+        if (item.data && item.path) {
+          await writeBrowserFile(workspaceUriForExportPath(sourceUri, item.path), item.data);
+        }
+      }
+      return true;
+    }
+
+    const firstUri = await choosePath(items[0].path || defaultPath);
+    if (!firstUri) {
+      return false;
+    }
+
+    for (const item of items) {
+      if (!item.data) {
+        continue;
+      }
+      const targetUri = firstUri.with({
+        path: withPageSuffix(firstUri.path, item.page + 1),
+        query: "",
+        fragment: "",
+      });
+      await writeBrowserFile(targetUri, item.data);
+      item.path = targetUri.path;
+    }
+    return true;
+  }
+
+  if (!response.data) {
+    return false;
+  }
+
+  const targetUri = response.path
+    ? workspaceUriForExportPath(sourceUri, response.path)
+    : await choosePath(defaultPath);
+  if (!targetUri) {
+    return false;
+  }
+  await writeBrowserFile(targetUri, response.data);
+  response.path = targetUri.path;
+  return true;
 }
 
 /**
@@ -293,7 +522,9 @@ export async function commandShow(kind: ExportKind, extraOpts?: ExportOpts): Pro
   const actionOpts: ExportActionOpts = {};
 
   const conf = vscode.workspace.getConfiguration("tinymist");
-  const openIn: string = conf.get("showExportFileIn") || "editorTab";
+  const openIn: string = extensionState.features.web
+    ? "editorTab"
+    : conf.get("showExportFileIn") || "editorTab";
 
   // Telling the language server to open the file instead of using
   // ```
@@ -303,7 +534,7 @@ export async function commandShow(kind: ExportKind, extraOpts?: ExportOpts): Pro
   //
   // See https://github.com/Myriad-Dreamin/tinymist/issues/837
   // Also see https://github.com/microsoft/vscode/issues/85930
-  const openBySystemDefault = openIn === "systemDefault";
+  const openBySystemDefault = !extensionState.features.web && openIn === "systemDefault";
   if (openBySystemDefault && kind !== "Bundle") {
     actionOpts.open = true;
   }
@@ -337,17 +568,27 @@ export async function commandShow(kind: ExportKind, extraOpts?: ExportOpts): Pro
       await vscode.window.showErrorMessage(`Failed to export ${kind}: no path in response`);
       return;
     }
-    await commands.executeCommand("revealFileInOS", vscode.Uri.file(exportPath));
+    if (extensionState.features.web) {
+      await vscode.window.showInformationMessage(
+        l10nMsg("Bundle exported to: {path}", { path: exportPath }),
+      );
+    } else {
+      await commands.executeCommand("revealFileInOS", vscode.Uri.file(exportPath));
+    }
     return;
   }
 
-  const showRes = await showExportFileIn(exportResponse, openIn);
+  const showRes = await showExportFileIn(exportResponse, openIn, activeEditor.document.uri);
   if (!showRes) {
     await vscode.window.showErrorMessage(`Failed to export ${kind}: no path in response`);
   }
 }
 
-async function showExportFileIn(exportResponse: ExportResponse, openIn: string): Promise<boolean> {
+async function showExportFileIn(
+  exportResponse: ExportResponse,
+  openIn: string,
+  sourceUri: vscode.Uri,
+): Promise<boolean> {
   // PDF export is not paged. The response should be a simple object.
   // For other formats, we just open the first page.
   const exportPath =
@@ -361,7 +602,7 @@ async function showExportFileIn(exportResponse: ExportResponse, openIn: string):
       break;
     case "editorTab": {
       // find and replace exportUri
-      const exportUri = vscode.Uri.file(exportPath);
+      const exportUri = workspaceUriForExportPath(sourceUri, exportPath);
       const uriToFind = exportUri.toString();
       findTab: for (const editor of vscode.window.tabGroups.all) {
         for (const tab of editor.tabs) {

@@ -26,6 +26,183 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 const NOT_AVAILABLE = "current not available";
 const COMMA = enc.encode(",");
+
+type PreviewSvgPaintMetrics = {
+  renderRootTag: string;
+  renderMode: string;
+  renderRootWidth: number;
+  renderRootHeight: number;
+  pageCount: number;
+  nonWhitePaintElementCount: number;
+  darkPaintElementCount: number;
+  bluePaintElementCount: number;
+  paintedGlyphElementCount: number;
+  darkTextGlyphElementCount: number;
+  blueTextGlyphElementCount: number;
+  paintSamples: string[];
+};
+
+/**
+ * Wait for typst-dom's asynchronous renderer queue to drain. addChangement()
+ * only schedules rendering on requestAnimationFrame; measuring immediately
+ * after it returns observes the empty/pre-render SVG shell.
+ */
+function waitForTypstRender(svgDoc: TypstDocument, timeoutMs = 10000): Promise<void> {
+  const impl = svgDoc.impl as unknown as {
+    isRendering?: boolean;
+    patchQueue?: unknown[];
+  };
+
+  return new Promise((resolve, reject) => {
+    const deadline = performance.now() + timeoutMs;
+    const check = () => {
+      if (impl.isRendering === false && (!impl.patchQueue || impl.patchQueue.length === 0)) {
+        // The renderer sets isRendering=false immediately before postRender().
+        // This callback runs after that animation-frame callback has returned.
+        resolve();
+        return;
+      }
+      if (performance.now() >= deadline) {
+        reject(new Error("Timed out waiting for typst-dom render queue to drain"));
+        return;
+      }
+      requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+  });
+}
+
+/**
+ * Inspects the actual rendered SVG tree after typst-dom has completed its
+ * asynchronous update. It counts geometric elements whose computed fill or
+ * stroke is non-white, avoiding serialization/rasterization of a detached SVG.
+ */
+function measurePreviewSvgPaint(svg: SVGSVGElement): PreviewSvgPaintMetrics {
+  const bounds = svg.getBBox();
+  const nodes = Array.from(
+    svg.querySelectorAll<SVGGraphicsElement>(
+      "path, text, image, use, rect, circle, ellipse, line, polygon, polyline",
+    ),
+  );
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  let nonWhitePaintElementCount = 0;
+  let darkPaintElementCount = 0;
+  let bluePaintElementCount = 0;
+  let paintedGlyphElementCount = 0;
+  let darkTextGlyphElementCount = 0;
+  let blueTextGlyphElementCount = 0;
+  const paintSamples: string[] = [];
+
+  const readColor = (color: string, opacity: string): [number, number, number] | undefined => {
+    if (!context || !color || color === "none" || color === "transparent" || Number(opacity) <= 0) {
+      return undefined;
+    }
+
+    // Computed SVG colors are normally serialized as rgb()/rgba(). Canvas
+    // normalizes those values and gives us their actual channels and alpha.
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = "#010203";
+    context.fillStyle = color;
+    if (context.fillStyle === "#010203" && color.toLowerCase() !== "#010203") {
+      return undefined;
+    }
+    context.fillRect(0, 0, 1, 1);
+    const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
+    if (alpha * Number(opacity) <= 8) {
+      return undefined;
+    }
+    return [red, green, blue];
+  };
+
+  for (const node of nodes) {
+    const style = getComputedStyle(node);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      Number(style.opacity) <= 0
+    ) {
+      continue;
+    }
+
+    let box: DOMRect | SVGRect;
+    try {
+      box = node.getBBox();
+    } catch {
+      continue;
+    }
+    if (box.width <= 0 && box.height <= 0) {
+      continue;
+    }
+
+    const fill = readColor(style.fill, style.fillOpacity);
+    const stroke =
+      Number.parseFloat(style.strokeWidth) > 0
+        ? readColor(style.stroke, style.strokeOpacity)
+        : undefined;
+    const colors = [fill, stroke].filter(
+      (color): color is [number, number, number] => color !== undefined,
+    );
+    if (colors.length === 0) {
+      continue;
+    }
+
+    const hasNonWhitePaint = colors.some(
+      ([red, green, blue]) => red < 245 || green < 245 || blue < 245,
+    );
+    const hasDarkPaint = colors.some(
+      ([red, green, blue]) => Math.max(red, green, blue) < 96,
+    );
+    const hasBluePaint = colors.some(
+      ([red, green, blue]) => blue > 120 && blue > red * 1.35 && blue > green * 1.15,
+    );
+
+    if (hasNonWhitePaint) {
+      nonWhitePaintElementCount += 1;
+    }
+    if (hasDarkPaint) {
+      darkPaintElementCount += 1;
+    }
+    if (hasBluePaint) {
+      bluePaintElementCount += 1;
+    }
+
+    // Typst emits each text glyph as an SVG <use> that references a path in
+    // <defs>. Ignore page/background rectangles here: they can be black even
+    // when the document's actual text frames are empty.
+    if (node.tagName.toLowerCase() === "use" && hasNonWhitePaint) {
+      paintedGlyphElementCount += 1;
+      if (hasDarkPaint) {
+        darkTextGlyphElementCount += 1;
+      }
+      if (hasBluePaint) {
+        blueTextGlyphElementCount += 1;
+      }
+    }
+
+    if (paintSamples.length < 20) {
+      paintSamples.push(
+        `${node.tagName.toLowerCase()}.${node.getAttribute("class") || ""}:fill=${style.fill}:stroke=${style.stroke}:bbox=${box.width.toFixed(2)}x${box.height.toFixed(2)}`,
+      );
+    }
+  }
+
+  return {
+    renderRootTag: svg.tagName.toLowerCase(),
+    renderMode: svg.getAttribute("data-render-mode") || "svg",
+    renderRootWidth: bounds.width,
+    renderRootHeight: bounds.height,
+    pageCount: svg.querySelectorAll("g.typst-page").length,
+    nonWhitePaintElementCount,
+    darkPaintElementCount,
+    bluePaintElementCount,
+    paintedGlyphElementCount,
+    darkTextGlyphElementCount,
+    blueTextGlyphElementCount,
+    paintSamples,
+  };
+}
+
 export interface WsArgs {
   url: string;
   previewMode: PreviewMode;
@@ -345,6 +522,16 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
         messageData.slice(message_idx + 1),
       ];
       console.log("recv", message[0], messageData.length);
+      const browserState = (window as any).vscode_state;
+      const vscodeApi = (window as any).__tinymistVscodeApi;
+      if (browserState?.browserTransport === true) {
+        vscodeApi?.postMessage?.({
+          type: "tinymist-preview-frame-parsed",
+          taskId: browserState.taskId,
+          frameKind: message[0],
+          byteLength: messageData.byteLength,
+        });
+      }
       // console.log(message[0], message[1].length);
       if (isContentPreview) {
         // whether to scroll to the content preview when user updates document
@@ -461,7 +648,126 @@ export async function wsMain({ url, previewMode, isContentPreview }: WsArgs) {
         return;
       }
 
-      svgDoc.addChangement(message as any);
+      try {
+        svgDoc.addChangement(message as any);
+      } catch (error) {
+        const browserState = (window as any).vscode_state;
+        const vscodeApi = (window as any).__tinymistVscodeApi;
+        if (browserState?.browserTransport === true) {
+          vscodeApi?.postMessage?.({
+            type: "tinymist-preview-frame-error",
+            taskId: browserState.taskId,
+            message: error instanceof Error ? error.stack || error.message : String(error),
+          });
+        }
+        throw error;
+      }
+      if ((window as any).vscode_state?.browserTransport === true) {
+        const browserState = (window as any).vscode_state;
+        const vscodeApi = (window as any).__tinymistVscodeApi;
+        void waitForTypstRender(svgDoc).then(
+          () => {
+            const app = document.getElementById("typst-app");
+            const appRect = app?.getBoundingClientRect();
+            const firstChild = app?.firstElementChild;
+            const rootSvg =
+              firstChild?.tagName.toLowerCase() === "svg"
+                ? (firstChild as SVGSVGElement)
+                : app?.querySelector<SVGSVGElement>("svg");
+            const svgs = Array.from(app?.querySelectorAll("svg") ?? []);
+            const visibleSvgs = svgs.filter((svg) => {
+              const rect = svg.getBoundingClientRect();
+              const style = getComputedStyle(svg);
+              return (
+                rect.width > 0 &&
+                rect.height > 0 &&
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                Number(style.opacity) > 0
+              );
+            });
+            const contentElements = Array.from(
+              rootSvg?.querySelectorAll(
+                "path, text, image, use, rect, circle, ellipse, line, polygon, polyline, foreignObject",
+              ) ?? [],
+            );
+            const visibleContentElements = contentElements.filter((element) => {
+              const rect = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return (
+                (rect.width > 0 || rect.height > 0) &&
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                Number(style.opacity) > 0
+              );
+            });
+            const rootRect = rootSvg?.getBoundingClientRect();
+            const paintMetrics = rootSvg
+              ? measurePreviewSvgPaint(rootSvg)
+              : {
+                  renderRootTag: firstChild?.tagName.toLowerCase() ?? "none",
+                  renderMode: "missing-svg",
+                  renderRootWidth: 0,
+                  renderRootHeight: 0,
+                  nonWhitePaintElementCount: 0,
+                  darkPaintElementCount: 0,
+                  bluePaintElementCount: 0,
+                  paintedGlyphElementCount: 0,
+                  darkTextGlyphElementCount: 0,
+                  blueTextGlyphElementCount: 0,
+                  pageCount: 0,
+                  paintSamples: [],
+                };
+
+            vscodeApi?.postMessage?.({
+              type: "tinymist-preview-rendered",
+              taskId: browserState.taskId,
+              metrics: {
+                appWidth: appRect?.width ?? 0,
+                appHeight: appRect?.height ?? 0,
+                svgCount: svgs.length,
+                visibleSvgCount: visibleSvgs.length,
+                svgWidth: rootRect?.width ?? 0,
+                svgHeight: rootRect?.height ?? 0,
+                contentElementCount: contentElements.length,
+                visibleContentElementCount: visibleContentElements.length,
+                markupLength: app?.innerHTML.length ?? 0,
+                ...paintMetrics,
+              },
+            });
+          },
+          (error: unknown) => {
+            vscodeApi?.postMessage?.({
+              type: "tinymist-preview-rendered",
+              taskId: browserState.taskId,
+              metrics: {
+                appWidth: 0,
+                appHeight: 0,
+                svgCount: 0,
+                visibleSvgCount: 0,
+                svgWidth: 0,
+                svgHeight: 0,
+                contentElementCount: 0,
+                visibleContentElementCount: 0,
+                markupLength: 0,
+                renderRootTag: "none",
+                renderMode: "render-error",
+                renderRootWidth: 0,
+                renderRootHeight: 0,
+                nonWhitePaintElementCount: 0,
+                darkPaintElementCount: 0,
+                bluePaintElementCount: 0,
+                paintedGlyphElementCount: 0,
+                darkTextGlyphElementCount: 0,
+                blueTextGlyphElementCount: 0,
+                pageCount: 0,
+                paintSamples: [],
+                renderError: error instanceof Error ? error.message : String(error),
+              },
+            });
+          },
+        );
+      }
     }
 
     return dispose;

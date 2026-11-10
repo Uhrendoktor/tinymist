@@ -44,7 +44,7 @@ use crate::stats::{CompilerQueryStats, QueryStatGuard};
 use crate::task::ExportUserConfig;
 use crate::vfs::notify::NotifyMessage;
 use crate::Config;
-#[cfg(feature = "preview")]
+#[cfg(any(feature = "preview", feature = "preview-web"))]
 use crate::ServerEvent;
 
 type EditorSender = mpsc::UnboundedSender<EditorRequest>;
@@ -85,7 +85,7 @@ impl ServerState {
     /// Reload the projects.
     pub fn reload_projects(&mut self) -> Result<()> {
         // todo: hot replacement
-        #[cfg(feature = "preview")]
+        #[cfg(any(feature = "preview", feature = "preview-web"))]
         self.preview.stop_all();
         let editor_tx = self.editor_tx.clone();
 
@@ -94,7 +94,7 @@ impl ServerState {
             editor_tx,
             self.client.clone(),
             self.dep_tx.clone(),
-            #[cfg(feature = "preview")]
+            #[cfg(any(feature = "preview", feature = "preview-web"))]
             self.preview.watchers.clone(),
             #[cfg(all(not(feature = "system"), feature = "web"))]
             if let sync_ls::TransportHost::Js { sender, .. } =
@@ -146,7 +146,7 @@ impl ServerState {
         editor_tx: mpsc::UnboundedSender<EditorRequest>,
         client: TypedLspClient<ServerState>,
         dep_tx: mpsc::UnboundedSender<NotifyMessage>,
-        #[cfg(feature = "preview")] preview: ProjectPreviewState,
+        #[cfg(any(feature = "preview", feature = "preview-web"))] preview: ProjectPreviewState,
         #[cfg(all(not(feature = "system"), feature = "web"))] resolve_fn: js_sys::Function,
     ) -> ProjectState {
         let const_config = &config.const_config;
@@ -164,7 +164,7 @@ impl ServerState {
         // Create the compile handler for client consuming results.
         let periscope_args = config.periscope_args.clone();
         let handle = Arc::new(CompileHandlerImpl {
-            #[cfg(feature = "preview")]
+            #[cfg(any(feature = "preview", feature = "preview-web"))]
             preview,
             is_standalone: false,
             #[cfg(feature = "export")]
@@ -246,7 +246,7 @@ impl ServerState {
 
         ProjectState {
             compiler,
-            #[cfg(feature = "preview")]
+            #[cfg(any(feature = "preview", feature = "preview-web"))]
             preview: handle.preview.clone(),
             analysis: handle.analysis.clone(),
             stats: CompilerQueryStats::default(),
@@ -332,7 +332,7 @@ pub struct ProjectState {
     /// The query statistics.
     pub stats: CompilerQueryStats,
     /// The preview state.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub preview: ProjectPreviewState,
     /// The export task.
     #[cfg(feature = "export")]
@@ -413,11 +413,11 @@ impl PeriscopeProvider for TypstPeriscopeProvider {
 #[derive(Default, Clone)]
 pub struct ProjectPreviewState {
     /// The inner state.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub(crate) inner: Arc<Mutex<FxHashMap<ProjectInsId, Arc<tinymist_preview::CompileWatcher>>>>,
 }
 
-#[cfg(feature = "preview")]
+#[cfg(any(feature = "preview", feature = "preview-web"))]
 impl ProjectPreviewState {
     /// Registers a compile watcher.
     #[must_use]
@@ -455,7 +455,7 @@ pub struct CompileHandlerImpl {
     /// The analysis data.
     pub(crate) analysis: Arc<Analysis>,
 
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     pub(crate) preview: ProjectPreviewState,
     /// Whether the compile server is running in standalone CLI (not as a
     /// language server).
@@ -479,11 +479,14 @@ pub trait ProjectClient: Send + Sync + 'static {
     /// Sends an interrupt event back to the server.
     fn interrupt(&self, event: LspInterrupt);
     /// Sends a server event back to the server.
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     fn server_event(&self, event: ServerEvent);
     /// Sends a dev event to the client, used for neovim's E2E testing.
     #[cfg(feature = "export")]
     fn dev_event(&self, event: DevEvent);
+    /// Sends an automatically generated browser export to the editor host.
+    #[cfg(feature = "export")]
+    fn browser_export_task_result(&self, event: BrowserExportTaskResult);
 }
 
 impl ProjectClient for LspClient {
@@ -491,7 +494,7 @@ impl ProjectClient for LspClient {
         self.send_event(event);
     }
 
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     fn server_event(&self, event: ServerEvent) {
         self.send_event(event);
     }
@@ -500,6 +503,11 @@ impl ProjectClient for LspClient {
     fn dev_event(&self, event: DevEvent) {
         self.send_notification::<DevEvent>(&event);
     }
+
+    #[cfg(feature = "export")]
+    fn browser_export_task_result(&self, event: BrowserExportTaskResult) {
+        self.send_notification::<BrowserExportTaskResult>(&event);
+    }
 }
 
 impl ProjectClient for mpsc::UnboundedSender<LspInterrupt> {
@@ -507,7 +515,7 @@ impl ProjectClient for mpsc::UnboundedSender<LspInterrupt> {
         self.send(event).log_error("failed to send interrupt");
     }
 
-    #[cfg(feature = "preview")]
+    #[cfg(any(feature = "preview", feature = "preview-web"))]
     fn server_event(&self, _event: ServerEvent) {
         log::warn!("ProjectClient: server_event is not implemented for mpsc::UnboundedSender<LspInterrupt>");
     }
@@ -516,6 +524,13 @@ impl ProjectClient for mpsc::UnboundedSender<LspInterrupt> {
     fn dev_event(&self, _event: DevEvent) {
         log::warn!(
             "ProjectClient: dev_event is not implemented for mpsc::UnboundedSender<LspInterrupt>"
+        );
+    }
+
+    #[cfg(feature = "export")]
+    fn browser_export_task_result(&self, _event: BrowserExportTaskResult) {
+        log::warn!(
+            "ProjectClient: browser_export_task_result is not implemented for mpsc::UnboundedSender<LspInterrupt>"
         );
     }
 }
@@ -696,7 +711,7 @@ impl CompileHandler<LspCompilerFeat, ProjectInsStateExt> for CompileHandlerImpl 
             self.push_diagnostics(dv, None);
         }
 
-        #[cfg(feature = "preview")]
+        #[cfg(any(feature = "preview", feature = "preview-web"))]
         if let Some(inner) = self.preview.get(&rep.id) {
             use tinymist_preview::CompileStatus;
             use tinymist_project::CompileStatusEnum::*;
@@ -775,7 +790,7 @@ impl CompileHandler<LspCompilerFeat, ProjectInsStateExt> for CompileHandlerImpl 
         #[cfg(feature = "export")]
         self.export.signal(art, &self.client);
 
-        #[cfg(feature = "preview")]
+        #[cfg(any(feature = "preview", feature = "preview-web"))]
         if let Some(inner) = self.preview.get(art.id()) {
             let art = art.clone();
             inner.notify_compile(Arc::new(crate::tool::preview::PreviewCompileView { art }));
@@ -820,5 +835,26 @@ pub enum DevEvent {
 
 impl lsp_types::notification::Notification for DevEvent {
     const METHOD: &'static str = "tinymist/devEvent";
+    type Params = Self;
+}
+
+/// Result bytes from a browser automatic export task. The language server
+/// cannot write to the browser workspace filesystem, so the extension host
+/// persists this payload through the originating VS Code filesystem provider.
+#[cfg(feature = "export")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserExportTaskResult {
+    /// Canonical source path used to resolve the workspace filesystem provider.
+    pub source_path: String,
+    /// Resolved output path, or an absent path to use the source file's default.
+    pub path: Option<String>,
+    /// Base64-encoded exported artifact.
+    pub data: String,
+}
+
+#[cfg(feature = "export")]
+impl lsp_types::notification::Notification for BrowserExportTaskResult {
+    const METHOD: &'static str = "tinymist/browserExportTaskResult";
     type Params = Self;
 }

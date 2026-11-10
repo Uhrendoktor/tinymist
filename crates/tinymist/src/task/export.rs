@@ -1,6 +1,7 @@
 //! The actor that handles various document export, like PDF and SVG export.
 
 use std::path::{Path, PathBuf};
+#[cfg(feature = "system")]
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, OnceLock};
 use std::{ops::DerefMut, pin::Pin};
@@ -17,19 +18,23 @@ use tinymist_query::{
     PagedExportResponse, GLOBAL_STATS,
 };
 use tinymist_std::error::prelude::*;
+#[cfg(feature = "system")]
 use tinymist_std::fs::paths::write_atomic;
 use tinymist_std::path::PathClean;
 use tinymist_std::typst::TypstDocument;
 use tinymist_task::{
-    output_template, pdf_options, DocumentQuery, ExportBundleTask, ExportMarkdownTask,
-    ExportPngTask, ExportSvgTask, ExportTarget, ImageOutput, PathPattern, PdfExport, PngExport,
-    SvgExport, TextExport,
+    output_template, DocumentQuery, ExportMarkdownTask, ExportPngTask, ExportSvgTask, ExportTarget,
+    ImageOutput, PathPattern, PdfExport, PngExport, SvgExport, TextExport,
 };
+#[cfg(feature = "system")]
+use tinymist_task::{pdf_options, ExportBundleTask};
 use tokio::sync::mpsc;
 use typlite::{Format, Typlite};
+#[cfg(feature = "system")]
 use typst::diag::Warned;
 use typst::ecow::EcoString;
 use typst::foundations::Repr;
+#[cfg(feature = "system")]
 use typst_bundle::{Bundle, BundleOptions, VirtualFs};
 
 use futures::Future;
@@ -38,15 +43,45 @@ use rayon::Scope;
 
 use super::SyncTaskFactory;
 use crate::lsp::query::QueryFuture;
+#[cfg(feature = "system")]
+use crate::project::{update_lock, ApplyProjectTask, PROJECT_ROUTE_USER_ACTION_PRIORITY};
 use crate::project::{
-    update_lock, ApplyProjectTask, CompiledArtifact, DevEvent, DevExportEvent, EntryReader,
+    BrowserExportTaskResult, CompiledArtifact, DevEvent, DevExportEvent, EntryReader,
     ExportHtmlTask, ExportPdfTask, ExportTask as ProjectExportTask, ExportTeXTask, ExportTextTask,
     LspCompiledArtifact, LspComputeGraph, ProjectClient, ProjectTask, TaskWhen,
-    PROJECT_ROUTE_USER_ACTION_PRIORITY,
 };
 use crate::world::TaskInputs;
 use crate::ServerState;
 use crate::{actor::editor::EditorRequest, tool::word_count};
+
+#[cfg(target_arch = "wasm32")]
+fn browser_export_source_path(artifact: &LspCompiledArtifact) -> Option<String> {
+    let entry = artifact.world().entry_state();
+    let main = entry.main()?;
+    let virtual_path = main.vpath().get_with_slash();
+    let source_path = match entry.workspace_root() {
+        Some(root) => root.join(virtual_path.trim_start_matches('/')),
+        None => PathBuf::from(virtual_path),
+    };
+    Some(source_path.to_string_lossy().into_owned())
+}
+
+/// Checks whether an export path is absolute on the current host.
+///
+/// VS Code Web supplies rooted POSIX virtual paths (for example
+/// `/workspace/document.pdf`). On `wasm32-unknown-unknown`, Rust's standard
+/// path classification does not reliably recognize those paths, so mirror
+/// the browser path contract used by the preview entry resolver.
+fn is_absolute_export_path(path: &Path) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        path.to_str().is_some_and(|path| path.starts_with('/'))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        path.is_absolute()
+    }
+}
 
 impl ServerState {
     /// Exports the current document.
@@ -59,8 +94,8 @@ impl ServerState {
         } = req;
         let entry = self.entry_resolver().resolve(Some(path.as_path().into()));
 
-        let lock_dir = self.entry_resolver().resolve_lock(&entry);
-        let update_dep = lock_dir.clone().map(|lock_dir| {
+        #[cfg(feature = "system")]
+        let update_dep = self.entry_resolver().resolve_lock(&entry).map(|lock_dir| {
             |snap: LspComputeGraph| {
                 tokio::spawn(async move {
                     let mut updater = update_lock(lock_dir.clone());
@@ -78,6 +113,8 @@ impl ServerState {
                 });
             }
         });
+        #[cfg(not(feature = "system"))]
+        let update_dep: Option<fn(LspComputeGraph)> = None;
 
         let snap = self.snapshot().map_err(internal_error)?;
         just_future(async move {
@@ -114,13 +151,22 @@ impl ServerState {
         }
 
         let entry = origin_entry.select_in_workspace("/__md_main.typ");
-        let md_content = self
-            .memory_changes
-            .get(path.as_path())
-            .map(|s| Ok(s.text().to_owned()))
-            .unwrap_or_else(|| tinymist_std::fs::paths::read(&path))
-            .context("failed to read markdown file")
-            .map_err(invalid_params)?;
+        let md_content = if let Some(source) = self.memory_changes.get(path.as_path()) {
+            source.text().to_owned()
+        } else {
+            #[cfg(feature = "system")]
+            {
+                tinymist_std::fs::paths::read(&path)
+                    .context("failed to read markdown file")
+                    .map_err(invalid_params)?
+            }
+            #[cfg(not(feature = "system"))]
+            {
+                return Err(invalid_params(
+                    "markdown source is not present in the browser workspace memory",
+                ));
+            }
+        };
 
         let snap = self.snapshot().map_err(internal_error)?;
         just_future(async move {
@@ -307,8 +353,46 @@ impl ExportTask {
         let fut = self.export_folder.spawn(rev, || {
             let task = config.task.clone();
             let artifact = artifact.clone();
+            #[cfg(target_arch = "wasm32")]
+            let client = client.clone();
             Box::pin(async move {
-                log_err(Self::do_export(task, artifact, None).await);
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let source_path = browser_export_source_path(&artifact);
+                    match Self::do_export_to_memory(task, artifact).await {
+                        Ok(Some(OnExportResponse::Single {
+                            path,
+                            data: Some(data),
+                        })) => {
+                            if let Some(source_path) = source_path {
+                                client.browser_export_task_result(BrowserExportTaskResult {
+                                    source_path,
+                                    path: path.map(|path| path.to_string_lossy().into_owned()),
+                                    data,
+                                });
+                            } else {
+                                log::error!(
+                                    "Browser automatic export failed: source path is unavailable"
+                                );
+                            }
+                        }
+                        Ok(Some(_)) => {
+                            log::error!(
+                                "Browser automatic export returned an unsupported multi-file artifact"
+                            );
+                        }
+                        Ok(None) => {
+                            log::warn!("Browser automatic export produced no artifact");
+                        }
+                        Err(error) => {
+                            log::error!("Browser automatic export failed: {error:#}");
+                        }
+                    }
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    log_err(Self::do_export(task, artifact, None).await);
+                }
                 if let Some(f) = export_hook {
                     f()
                 }
@@ -361,16 +445,16 @@ impl ExportTask {
         let Some(write_to) = output.substitute(&entry) else {
             return Ok(None);
         };
-        let write_to = if write_to.is_relative() {
+        let write_to = if is_absolute_export_path(&write_to) {
+            write_to.to_path_buf()
+        } else {
             let base = match entry.root() {
                 Some(root) => root.as_ref().to_path_buf(),
                 None => std::env::current_dir().context("failed to get current directory")?,
             };
             base.join(write_to.as_ref()).clean()
-        } else {
-            write_to.to_path_buf()
         };
-        if write_to.is_relative() {
+        if !is_absolute_export_path(&write_to) {
             bail!("ExportTask({task:?}): output path is relative: {write_to:?}");
         }
         if write_to.is_dir() && !matches!(task, ProjectTask::ExportBundle { .. }) {
@@ -449,6 +533,7 @@ impl ExportTask {
                         .collect(),
                 }
             }
+            #[cfg(feature = "system")]
             ExportArtifact::Bundle { .. } => {
                 bail!("cannot export bundle to memory")
             }
@@ -463,119 +548,131 @@ impl ExportTask {
         artifact: LspCompiledArtifact,
         lock_dir: Option<ImmutPath>,
     ) -> Result<Option<OnExportResponse>> {
-        let CompiledArtifact { graph, .. } = &artifact;
-
-        let Some(write_to) = Self::prepare_output_path(&task, graph)? else {
-            return Ok(None);
-        };
-
-        static EXPORT_ID: AtomicUsize = AtomicUsize::new(0);
-        let export_id = EXPORT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-        log::debug!(
-            "ExportTask({export_id},lock={lock_dir:?}): exporting {entry:?} to {write_to:?}",
-            entry = graph.snap.world.entry_state()
-        );
-        if let Some(e) = write_to.parent() {
-            if !e.exists() {
-                std::fs::create_dir_all(e).context("failed to create directory")?;
-            }
+        #[cfg(not(feature = "system"))]
+        {
+            let _ = (task, artifact, lock_dir);
+            bail!(
+                "direct filesystem export is unavailable in browser builds; request in-memory export and let the editor write through its workspace API"
+            );
         }
+        #[cfg(feature = "system")]
+        {
+            let CompiledArtifact { graph, .. } = &artifact;
 
-        let _: Option<()> = lock_dir.and_then(|lock_dir| {
-            let mut updater = crate::project::update_lock(lock_dir.clone());
-            let root = graph.world().entry_state().root()?;
+            let Some(write_to) = Self::prepare_output_path(&task, graph)? else {
+                return Ok(None);
+            };
 
-            let doc_id = updater.compiled(graph.world(), (&root, &lock_dir))?;
+            static EXPORT_ID: AtomicUsize = AtomicUsize::new(0);
+            let export_id = EXPORT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-            updater.task(ApplyProjectTask {
-                id: doc_id.clone(),
-                document: doc_id.clone(),
-                task: task.clone(),
-            });
-            updater.update_materials(doc_id.clone(), graph.world().depended_fs_paths());
-            updater.route(doc_id, PROJECT_ROUTE_USER_ACTION_PRIORITY);
-            updater.commit();
-
-            Some(())
-        });
-
-        // Generate the data using common logic
-        let artifact = Self::do_export_bytes(task.clone(), artifact, export_id).await?;
-
-        let res = match artifact {
-            ExportArtifact::Single(data) => {
-                let res = OnExportResponse::Single {
-                    path: Some(write_to.clone()),
-                    data: None,
-                };
-
-                let to = write_to.clone();
-                tokio::task::spawn_blocking(move || write_atomic(to, data))
-                    .await
-                    .context_ut("failed to export")??;
-
-                res
-            }
-            ExportArtifact::Paged { total_pages, items } => {
-                let can_handle_multiple =
-                    output_template::has_indexable_template(write_to.to_str().unwrap_or_default());
-
-                if !can_handle_multiple && items.len() > 1 {
-                    bail!("cannot export multiple images without a page number template ({{p}}, {{0p}}) in the output path");
+            log::debug!(
+                "ExportTask({export_id},lock={lock_dir:?}): exporting {entry:?} to {write_to:?}",
+                entry = graph.snap.world.entry_state()
+            );
+            if let Some(e) = write_to.parent() {
+                if !e.exists() {
+                    std::fs::create_dir_all(e).context("failed to create directory")?;
                 }
+            }
 
-                let mut res_items = Vec::new();
-                let mut write_futures = Vec::new();
-                for (page_idx, bytes) in items {
-                    let to = if can_handle_multiple {
-                        let storage = output_template::format(
-                            write_to.to_str().unwrap_or_default(),
-                            page_idx + 1,
-                            total_pages,
-                        );
-                        PathBuf::from(storage)
-                    } else {
-                        write_to.clone()
+            let _: Option<()> = lock_dir.and_then(|lock_dir| {
+                let mut updater = crate::project::update_lock(lock_dir.clone());
+                let root = graph.world().entry_state().root()?;
+
+                let doc_id = updater.compiled(graph.world(), (&root, &lock_dir))?;
+
+                updater.task(ApplyProjectTask {
+                    id: doc_id.clone(),
+                    document: doc_id.clone(),
+                    task: task.clone(),
+                });
+                updater.update_materials(doc_id.clone(), graph.world().depended_fs_paths());
+                updater.route(doc_id, PROJECT_ROUTE_USER_ACTION_PRIORITY);
+                updater.commit();
+
+                Some(())
+            });
+
+            // Generate the data using common logic
+            let artifact = Self::do_export_bytes(task.clone(), artifact, export_id).await?;
+
+            let res = match artifact {
+                ExportArtifact::Single(data) => {
+                    let res = OnExportResponse::Single {
+                        path: Some(write_to.clone()),
+                        data: None,
                     };
 
-                    res_items.push(PagedExportResponse {
-                        page: page_idx,
-                        path: Some(to.clone()),
+                    let to = write_to.clone();
+                    tokio::task::spawn_blocking(move || write_atomic(to, data))
+                        .await
+                        .context_ut("failed to export")??;
+
+                    res
+                }
+                ExportArtifact::Paged { total_pages, items } => {
+                    let can_handle_multiple = output_template::has_indexable_template(
+                        write_to.to_str().unwrap_or_default(),
+                    );
+
+                    if !can_handle_multiple && items.len() > 1 {
+                        bail!("cannot export multiple images without a page number template ({{p}}, {{0p}}) in the output path");
+                    }
+
+                    let mut res_items = Vec::new();
+                    let mut write_futures = Vec::new();
+                    for (page_idx, bytes) in items {
+                        let to = if can_handle_multiple {
+                            let storage = output_template::format(
+                                write_to.to_str().unwrap_or_default(),
+                                page_idx + 1,
+                                total_pages,
+                            );
+                            PathBuf::from(storage)
+                        } else {
+                            write_to.clone()
+                        };
+
+                        res_items.push(PagedExportResponse {
+                            page: page_idx,
+                            path: Some(to.clone()),
+                            data: None,
+                        });
+
+                        let fut = tokio::task::spawn_blocking(move || write_atomic(to, bytes));
+                        write_futures.push(fut);
+                    }
+
+                    // Await all writes in parallel
+                    for result in futures::future::join_all(write_futures).await {
+                        result.context_ut("failed to export")??;
+                    }
+
+                    OnExportResponse::Paged {
+                        total_pages,
+                        items: res_items,
+                    }
+                }
+                #[cfg(feature = "system")]
+                ExportArtifact::Bundle { items } => {
+                    let root = write_to.clone();
+                    let fut =
+                        tokio::task::spawn_blocking(move || write_bundle_files(&root, &items));
+                    fut.await.context_ut("failed to export")??;
+
+                    OnExportResponse::Single {
+                        path: Some(write_to),
                         data: None,
-                    });
-
-                    let fut = tokio::task::spawn_blocking(move || write_atomic(to, bytes));
-                    write_futures.push(fut);
+                    }
                 }
+            };
 
-                // Await all writes in parallel
-                for result in futures::future::join_all(write_futures).await {
-                    result.context_ut("failed to export")??;
-                }
-
-                OnExportResponse::Paged {
-                    total_pages,
-                    items: res_items,
-                }
-            }
-            ExportArtifact::Bundle { items } => {
-                let root = write_to.clone();
-                let fut = tokio::task::spawn_blocking(move || write_bundle_files(&root, &items));
-                fut.await.context_ut("failed to export")??;
-
-                OnExportResponse::Single {
-                    path: Some(write_to),
-                    data: None,
-                }
-            }
-        };
-
-        log::debug!("ExportTask({export_id}): export complete");
-        Ok(Some(res))
+            log::debug!("ExportTask({export_id}): export complete");
+            Ok(Some(res))
+        }
     }
 
-    /// Export a document into bytes.
     async fn do_export_bytes(
         task: ProjectTask,
         artifact: LspCompiledArtifact,
@@ -588,6 +685,7 @@ impl ExportTask {
             graph, doc, diag, ..
         } = artifact;
 
+        #[cfg(feature = "system")]
         if let ExportBundle(config) = task {
             return FutureFolder::compute(move |_| export_bundle_artifact(&graph, &config)).await?;
         }
@@ -650,7 +748,10 @@ impl ExportTask {
                     typst_html::html(html_doc()?, &typst_html::HtmlOptions::default())
                         .map_err(|e| format!("export error: {e:?}"))
                         .context_ut("failed to export to html")?.into(),
+                #[cfg(feature = "system")]
                 ExportBundle(..) => unreachable!(),
+                #[cfg(not(feature = "system"))]
+                ExportBundle(..) => bail!("bundle export is unavailable in browser builds"),
                 ExportSvgHtml(ExportHtmlTask { export: _ }) =>
                     reflexo_vec2svg::render_svg_html::<DefaultExportFeature>(paged_doc()?).into(),
                 ExportText(ExportTextTask { export: _ }) => TextExport::run_on_doc(doc)?.into(),
@@ -701,6 +802,7 @@ enum ExportArtifact {
         total_pages: usize,
         items: Vec<(usize, Bytes)>,
     },
+    #[cfg(feature = "system")]
     Bundle {
         items: Vec<(PathBuf, Bytes)>,
     },
@@ -755,6 +857,7 @@ impl WithPages for ImageOutput<String> {
     }
 }
 
+#[cfg(feature = "system")]
 fn export_bundle_artifact(
     graph: &LspComputeGraph,
     config: &ExportBundleTask,
@@ -803,6 +906,7 @@ fn export_bundle_artifact(
     })
 }
 
+#[cfg(feature = "system")]
 fn collect_bundle_files(fs: &VirtualFs) -> Result<Vec<(PathBuf, Bytes)>> {
     fs.iter()
         .map(|(path, data)| {
@@ -817,6 +921,7 @@ fn collect_bundle_files(fs: &VirtualFs) -> Result<Vec<(PathBuf, Bytes)>> {
         .collect()
 }
 
+#[cfg(feature = "system")]
 fn write_bundle_files(root: &Path, items: &[(PathBuf, Bytes)]) -> Result<()> {
     std::fs::create_dir_all(root).context("failed to create output directory")?;
     for (path, data) in items {
@@ -876,7 +981,10 @@ fn extra_compile_for_export<
 >(
     world: &LspWorld,
 ) -> Result<Arc<D>> {
+    #[cfg(feature = "system")]
     let res = tokio::task::block_in_place(|| CompilationTask::<D>::execute(world));
+    #[cfg(not(feature = "system"))]
+    let res = CompilationTask::<D>::execute(world);
 
     match res.output {
         Ok(v) => Ok(v),
@@ -907,9 +1015,18 @@ impl FutureFolder {
     where
         OP: FnOnce(&Scope<'scope>) -> R + Send + 'static,
     {
-        tokio::task::spawn_blocking(move || -> R { rayon::in_place_scope(op) })
-            .await
-            .context_ut("compute error")
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Browser WASM has a single worker and no Tokio blocking-thread pool.
+            // Rayon can execute this scope in place on the current worker.
+            Ok(rayon::in_place_scope(op))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            tokio::task::spawn_blocking(move || -> R { rayon::in_place_scope(op) })
+                .await
+                .context_ut("compute error")
+        }
     }
 
     #[must_use]
@@ -960,7 +1077,8 @@ impl FutureFolder {
 
 fn open_external(path: &Path) {
     #[cfg(not(feature = "open"))]
-    if open {
+    {
+        let _ = path;
         log::warn!("open is not supported in this build, ignoring");
     }
 

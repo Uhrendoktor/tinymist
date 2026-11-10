@@ -1,5 +1,5 @@
 //! The actors that running in background and asynchronously.
 
 pub mod editor;
-#[cfg(feature = "preview")]
+#[cfg(any(feature = "preview", feature = "preview-web"))]
 pub mod preview;
