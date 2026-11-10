@@ -57,7 +57,9 @@
     "release:preflight": "node scripts/release-preflight.mjs",
     "release": "node scripts/release.mjs",
     "draft-release": "node scripts/draft-release.mjs",
-    "package:vscode:web": "node scripts/build.mjs package:vscode:web"
+    "package:vscode:web": "node scripts/build.mjs package:vscode:web",
+    "build:browser": "node scripts/build-browser.mjs",
+    "test:wasm-assets": "node --test scripts/wasm-assets-manifest.test.mjs"
   },
   "dependencies": {},
   "devDependencies": {

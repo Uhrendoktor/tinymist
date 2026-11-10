@@ -1,0 +1,188 @@
+# Cargo-compatible dependency declarations for browser-embedded Typst assets.
+# Namespace, license and optional archive URLs live in package.metadata.tinymist.
+
+[package]
+name = "tinymist-browser-assets"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata.tinymist]
+schema-version = 1
+
+[package.metadata.tinymist.limits]
+max-total-bytes = 157286400
+max-package-bytes = 67108864
+max-font-bytes = 33554432
+
+[package.metadata.tinymist.built-in-fonts]
+provider = "Typst typst-assets"
+default-text-font = "Libertinus Serif"
+included-families = ["Libertinus Serif", "New Computer Modern", "New Computer Modern Math", "DejaVu Sans Mono"]
+note = "Already embedded by Typst; not downloaded again as external assets."
+
+[dependencies]
+cetz_plot = { package = "cetz-plot", version = "=0.1.4" }
+cetz_0_3_4 = { package = "cetz", version = "=0.3.4" }
+cetz_0_5_2 = { package = "cetz", version = "=0.5.2" }
+cetz_0_5_3 = { package = "cetz", version = "=0.5.3" }
+codly_languages = { package = "codly-languages", version = "=0.1.10" }
+codly = { package = "codly", version = "=2.0.0" }
+ctheorems = { package = "ctheorems", version = "=2.0.0" }
+elembic = { package = "elembic", version = "=1.1.1" }
+fletcher = { package = "fletcher", version = "=0.5.8" }
+glossarium = { package = "glossarium", version = "=0.5.10" }
+hydra = { package = "hydra", version = "=0.6.3" }
+kalt = { package = "kalt", version = "=0.1.1" }
+lilaq = { package = "lilaq", version = "=0.6.0" }
+lovelace = { package = "lovelace", version = "=0.3.1" }
+oxifmt_0_2_1 = { package = "oxifmt", version = "=0.2.1" }
+oxifmt_1_0_0 = { package = "oxifmt", version = "=1.0.0" }
+physica = { package = "physica", version = "=0.9.8" }
+quill = { package = "quill", version = "=0.8.0" }
+sertyp = { package = "sertyp", version = "=0.1.5" }
+showybox = { package = "showybox", version = "=2.0.4" }
+tidy = { package = "tidy", version = "=0.4.1" }
+tiptoe = { package = "tiptoe", version = "=0.4.0" }
+touying = { package = "touying", version = "=0.8.0" }
+unify = { package = "unify", version = "=0.8.1" }
+uniwarn = { package = "uniwarn", version = "=0.1.1" }
+zero_0_6_1 = { package = "zero", version = "=0.6.1" }
+zero_0_7_1 = { package = "zero", version = "=0.7.1" }
+
+[package.metadata.tinymist.dependency-metadata.cetz_plot]
+namespace = "preview"
+license = "LGPL-3.0-or-later"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
+
+[package.metadata.tinymist.dependency-metadata.cetz_0_3_4]
+namespace = "preview"
+license = "LGPL-3.0-or-later"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
+
+[package.metadata.tinymist.dependency-metadata.cetz_0_5_2]
+namespace = "preview"
+license = "LGPL-3.0-or-later"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
+
+[package.metadata.tinymist.dependency-metadata.cetz_0_5_3]
+namespace = "preview"
+license = "LGPL-3.0-or-later"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/LGPL-3.0-or-later.txt"
+
+[package.metadata.tinymist.dependency-metadata.codly_languages]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.codly]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.ctheorems]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.elembic]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.fletcher]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.glossarium]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.hydra]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.kalt]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.lilaq]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.lovelace]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.oxifmt_0_2_1]
+namespace = "preview"
+license = "MIT-0"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT-0.txt"
+
+[package.metadata.tinymist.dependency-metadata.oxifmt_1_0_0]
+namespace = "preview"
+license = "MIT OR Apache-2.0"
+license-url = "https://raw.githubusercontent.com/PgBiel/typst-oxifmt/main/LICENSE-MIT"
+
+[package.metadata.tinymist.dependency-metadata.physica]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.quill]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.sertyp]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.showybox]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.tidy]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.tiptoe]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.touying]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.unify]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt"
+
+[package.metadata.tinymist.dependency-metadata.uniwarn]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/typst/packages/main/packages/preview/uniwarn/0.1.1/LICENSE"
+
+[package.metadata.tinymist.dependency-metadata.zero_0_6_1]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/typst/packages/main/packages/preview/zero/0.6.1/LICENSE"
+
+[package.metadata.tinymist.dependency-metadata.zero_0_7_1]
+namespace = "preview"
+license = "MIT"
+license-url = "https://raw.githubusercontent.com/Mc-Zen/zero/main/LICENSE"
+
+# Add extra licensed font assets under [package.metadata.tinymist.fonts.<alias>].

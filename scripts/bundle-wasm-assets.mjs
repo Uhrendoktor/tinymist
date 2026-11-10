@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { readAssetManifest } from "./wasm-assets-manifest.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const outputDir = path.join(root, "target", "wasm-assets");
@@ -13,7 +14,7 @@ const fontDir = path.join(outputDir, "fonts");
 const noticesDir = path.join(outputDir, "notices");
 
 function parseArgs(argv) {
-  const args = { manifest: "wasm-assets.json", mode: "locked" };
+  const args = { manifest: "wasm-assets.toml", mode: "locked" };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--manifest") {
@@ -190,19 +191,20 @@ function extractPackage(archivePath, destination) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  // Custom manifests may live outside the checkout, so users can build
+  // personal browser bundles without maintaining a fork.
   const manifestPath = path.resolve(root, args.manifest);
-  assert.ok(manifestPath.startsWith(root + path.sep), "manifest must be inside the repository");
-  const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+  assert.match(manifestPath, /\.(?:toml|json)$/i, "asset manifest must be a TOML or JSON file");
+  const manifest = await readAssetManifest(manifestPath);
   const { limits, packageIds, fontIds } = validateManifest(manifest);
-  const relativeManifest = path.relative(root, manifestPath).replace(/\\/g, "/");
-  assert.match(manifestPath, /\.json$/i, "asset manifest must be a JSON file");
-  const lockPath = manifestPath.replace(/\.json$/i, ".lock.json");
+  const manifestLabel = path.basename(manifestPath);
+  const lockPath = manifestPath.replace(/\.(?:toml|json)$/i, ".lock.json");
   let previousLock = { schemaVersion: 1, packages: [], fonts: [] };
 
   if (args.mode === "locked") {
     previousLock = JSON.parse(await fs.readFile(lockPath, "utf8"));
     assert.equal(previousLock.schemaVersion, 1, "unsupported asset lock schema");
-    assert.equal(previousLock.manifest, relativeManifest, "asset lock belongs to a different manifest");
+    assert.equal(previousLock.manifest, manifestLabel, "asset lock belongs to a different manifest");
     assert.ok(Array.isArray(previousLock.packages) && Array.isArray(previousLock.fonts), "invalid asset lock");
     assert.deepEqual(
       previousLock.packages.map((item) => item.id).sort(),
@@ -336,7 +338,7 @@ async function main() {
       if (!selectedPackages.has(dependency)) {
         throw new Error(
           "Unbundled transitive Typst package " + dependency + " referenced in " +
-          path.relative(outputDir, packagePath) + ". Add its exact version to " + relativeManifest
+          path.relative(outputDir, packagePath) + ". Add its exact version to " + manifestLabel
         );
       }
     }
@@ -347,7 +349,7 @@ async function main() {
 
   const lock = {
     schemaVersion: 1,
-    manifest: relativeManifest,
+    manifest: manifestLabel,
     packages: packageLock,
     fonts: fontLock
   };

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "manifest": "wasm-assets.json",
+  "manifest": "wasm-assets.toml",
   "packages": [
     {
       "id": "preview/cetz-plot:0.1.4",

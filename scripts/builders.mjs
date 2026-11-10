@@ -161,7 +161,7 @@ export async function buildTinymistVscodeWebBase() {
 }
 
 export async function bundleWasmAssets() {
-  const manifest = process.env.TINYMIST_WASM_ASSET_MANIFEST || "wasm-assets.json";
+  const manifest = process.env.TINYMIST_WASM_ASSET_MANIFEST || "wasm-assets.toml";
   const updateLock = process.env.TINYMIST_WASM_ASSET_UPDATE_LOCK === "true";
   const mode = updateLock ? "--update-lock" : "--locked";
   await spawnAsync(
