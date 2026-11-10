@@ -71,7 +71,7 @@ test("checks out a selected Git branch and pinned commit", async () => {
   execFileSync("git", ["init", "-q", "-b", "main", repository]);
   execFileSync("git", ["config", "user.name", "Tinymist Tests"], { cwd: repository });
   execFileSync("git", ["config", "user.email", "tests@example.invalid"], { cwd: repository });
-  await fs.writeFile(path.join(repository, "packages", "demo", "typst.toml"), '[package]\\nname = "demo"\\nversion = "1.2.3"\\n');
+  await fs.writeFile(path.join(repository, "packages", "demo", "typst.toml"), '[package]\nname = "demo"\nversion = "1.2.3"\n');
   execFileSync("git", ["add", "."], { cwd: repository });
   execFileSync("git", ["commit", "-q", "-m", "fixture"], { cwd: repository });
   const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repository, encoding: "utf8" }).trim();
@@ -85,7 +85,7 @@ test("checks out a selected Git branch and pinned commit", async () => {
   const first = await checkoutGitPackage(source, undefined, path.join(root, "first"));
   assert.equal(first.commit, commit);
   assert.equal(await fs.readFile(path.join(first.packageDirectory, "typst.toml"), "utf8"),
-    '[package]\\nname = "demo"\\nversion = "1.2.3"\\n');
+    '[package]\nname = "demo"\nversion = "1.2.3"\n');
 
   const second = await checkoutGitPackage(source, commit, path.join(root, "second"));
   assert.equal(second.commit, commit);
