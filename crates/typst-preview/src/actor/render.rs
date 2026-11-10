@@ -172,6 +172,23 @@ impl RenderActor {
 
     #[typst_macros::time]
     fn render_full(&mut self, document: &TypstDocument) -> Vec<u8> {
+        if let TypstDocument::Paged(doc) = document {
+            log::info!(
+                "[browser-preview-debug] compiled Typst page count={}",
+                doc.pages().len()
+            );
+            for (index, page) in doc.pages().iter().enumerate() {
+                let frame_debug = format!("{:?}", page.frame)
+                    .chars()
+                    .take(1200)
+                    .collect::<String>();
+                log::info!(
+                    "[browser-preview-debug] compiled Typst page {} frame={}",
+                    index + 1,
+                    frame_debug
+                );
+            }
+        }
         let mut renderer = Self::new_renderer();
         log::info!("[browser-preview-debug] RenderActor starting full-document pack_delta");
         let delta = renderer.pack_delta(document);
