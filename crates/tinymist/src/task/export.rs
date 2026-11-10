@@ -54,6 +54,24 @@ use crate::world::TaskInputs;
 use crate::ServerState;
 use crate::{actor::editor::EditorRequest, tool::word_count};
 
+/// Checks whether an export path is absolute on the current host.
+///
+/// VS Code Web supplies rooted POSIX virtual paths (for example
+/// `/workspace/document.pdf`). On `wasm32-unknown-unknown`, Rust's standard
+/// path classification does not reliably recognize those paths, so mirror
+/// the browser path contract used by the preview entry resolver.
+fn is_absolute_export_path(path: &Path) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        path.to_str().is_some_and(|path| path.starts_with('/'))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        path.is_absolute()
+    }
+}
+
+
 impl ServerState {
     /// Exports the current document.
     pub fn on_export(&mut self, req: OnExportRequest) -> QueryFuture {
@@ -378,16 +396,16 @@ impl ExportTask {
         let Some(write_to) = output.substitute(&entry) else {
             return Ok(None);
         };
-        let write_to = if write_to.is_relative() {
+        let write_to = if is_absolute_export_path(&write_to) {
+            write_to.to_path_buf()
+        } else {
             let base = match entry.root() {
                 Some(root) => root.as_ref().to_path_buf(),
                 None => std::env::current_dir().context("failed to get current directory")?,
             };
             base.join(write_to.as_ref()).clean()
-        } else {
-            write_to.to_path_buf()
         };
-        if write_to.is_relative() {
+        if !is_absolute_export_path(&write_to) {
             bail!("ExportTask({task:?}): output path is relative: {write_to:?}");
         }
         if write_to.is_dir() && !matches!(task, ProjectTask::ExportBundle { .. }) {
