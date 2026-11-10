@@ -159,9 +159,6 @@ async function startServer() {
     connection.onRequest("tinymist/fsChange", (params) => {
       // Keep this request method-specific: the browser filesystem provider must
       // deliver file bytes before the project's compile interrupt is processed.
-      void connection.sendNotification("tmLog", {
-        data: "[browser-fs-debug] worker selected method-specific tinymist/fsChange handler",
-      });
       return invokeBridge(() => bridge.on_request("tinymist/fsChange", params));
     });
     connection.onRequest((m, p) => invokeBridge(() => bridge.on_request(m, p)));
