@@ -115,6 +115,9 @@ impl TinymistLanguageServer {
             self.state.on_lsp_request(&method, req_id, params)
         };
 
+        if method == "tinymist/fsChange" {
+            log::info!("[browser-fs-debug] on_request received fsChange handler result");
+        }
         let response = match result {
             Ok(MaybeDone::Done(Ok(t))) => {
                 if is_preview_start {
@@ -170,7 +173,13 @@ impl TinymistLanguageServer {
                 lsp_err(err)
             }
         };
+        if method == "tinymist/fsChange" {
+            log::info!("[browser-fs-debug] on_request serialized fsChange response; before runtime poll");
+        }
         poll_tokio_background_tasks();
+        if method == "tinymist/fsChange" {
+            log::info!("[browser-fs-debug] on_request runtime poll returned for fsChange");
+        }
         response
     }
 
@@ -305,11 +314,15 @@ impl<F: Future> Future for TokioDrivenFuture<F> {
 /// and their data plane responsive without enabling unavailable I/O or timers.
 fn poll_tokio_background_tasks() {
     #[cfg(target_arch = "wasm32")]
-    RUNTIMES.tokio_runtime.block_on(async {
-        for _ in 0..64 {
-            tokio::task::yield_now().await;
-        }
-    });
+    {
+        log::info!("[browser-runtime-debug] before Tokio background-task poll");
+        RUNTIMES.tokio_runtime.block_on(async {
+            for _ in 0..64 {
+                tokio::task::yield_now().await;
+            }
+        });
+        log::info!("[browser-runtime-debug] after Tokio background-task poll");
+    }
 }
 
 fn lsp_err(err: ResponseError) -> JsValue {
