@@ -379,16 +379,29 @@ export async function run(): Promise<void> {
   );
   await waitForTask(firstTaskId, (task) => task.renderedFrames > initialRenderedFrames);
 
+  // Keep the user's reported source verbatim: unlike the first acceptance
+  // fixture, this exercises default text paint, explicit per-run fill/stroke,
+  // markup, shadowed bindings, and a page break without forcing black text.
   const secondEditor = await createTypstDocument(
     workspace,
     "tinymist-browser-preview-second.typ",
     [
-      "#set page(width: 360pt, height: 240pt, margin: 20pt)",
-      "= Independent preview task",
-      "#lorem(60)",
+      '#text(stroke: blue, fill: blue, "asdasd")',
+      '#let a = rgb("#36526d")',
+      "",
+      "**== Test**",
+      "huhu",
+      "qsasd",
+      "",
+      "asd",
+      "asd",
+      "as",
+      "**= asd**",
+      "",
+      "#let a = {3 + 2}",
+      "",
       "#pagebreak()",
-      "= Second task page two",
-      "#lorem(60)",
+      "asasd",
       "",
     ].join("\n"),
   );
@@ -401,11 +414,34 @@ export async function run(): Promise<void> {
 
   try {
     await waitForTask(secondTaskId, (task) => task.panel);
-    const secondRenderedTask = await waitForTask(secondTaskId, (task) =>
-      task.frontendStarted &&
-      task.framesFromServer > 0 &&
-      task.renderedFrames > 0 &&
-      !!task.renderMetrics,
+    let secondRenderedTask: PreviewTask;
+    try {
+      secondRenderedTask = await waitForTask(secondTaskId, (task) =>
+        task.frontendStarted &&
+        task.framesFromServer > 0 &&
+        task.renderedFrames > 0 &&
+        !!task.renderMetrics,
+      );
+    } catch (error) {
+      const diagnostics = vscode.languages.getDiagnostics(secondEditor.document.uri);
+      throw new Error(
+        `${String(error)}; exact user fixture diagnostics: ${JSON.stringify(
+          diagnostics.map((item) => ({
+            message: item.message,
+            severity: item.severity,
+            line: item.range.start.line + 1,
+          })),
+        )}`,
+      );
+    }
+    const compileErrors = vscode.languages
+      .getDiagnostics(secondEditor.document.uri)
+      .filter((item) => item.severity === vscode.DiagnosticSeverity.Error);
+    assert(
+      compileErrors.length === 0,
+      `Exact user fixture has compile errors: ${JSON.stringify(
+        compileErrors.map((item) => item.message),
+      )}`,
     );
     assert(
       secondRenderedTask.renderMetrics!.visibleSvgCount > 0 &&
