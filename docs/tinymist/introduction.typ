@@ -36,7 +36,7 @@ Tinymist [ˈtaɪni mɪst] is an integrated language service for #link("https://t
 
 This repository is a standalone, maintained fork of #link("https://github.com/Myriad-Dreamin/tinymist")[upstream Tinymist]. Its main branch is kept up to date by bringing upstream changes into this fork while retaining the fork-specific work described here.
 
-The browser and WebAssembly packaging and asset-bundling capability is owned and maintained exclusively in this fork. This includes the Cargo-style wasm-assets.toml dependency manifest, its checksum lock file, bundled Typst packages and fonts, and the local scripts/build-browser.mjs builder for browser VSIX files.
+The browser and WebAssembly packaging and asset-bundling capability is owned and maintained exclusively in this fork. This includes the Typst package/font wasm-assets.toml manifest, its checksum lock file, bundled Typst packages and fonts, and the local scripts/build-browser.mjs builder for browser VSIX files.
 
 This fork is not an upstream contribution branch. Do not merge this fork's main branch or its WASM-specific feature branches back into Myriad-Dreamin/tinymist, and do not submit fork-only WASM changes as upstream pull requests. Upstream changes flow into this fork; the WASM bundling capability is maintained here.
 
@@ -100,7 +100,7 @@ license-url = "https://example.org/fonts/OFL.txt"
 
 For a non-standard package without a discoverable license notice, provide an explicit license override under `[package.metadata.tinymist.dependency-metadata.<package-name>]`. The package and font names/URLs above are placeholders. Package sources, versions, checksums and license notice hashes are recorded in the adjacent lock file.
 
-Each manifest has a neighbouring `.lock.json` file containing SHA-256 checksums for the downloaded package archives and font files. When you first use a custom manifest, or change its dependencies or fonts, generate/update that lock as part of the build with `--update-lock`. Keep the TOML file and its lock file together. For normal repeat builds, leave off `--update-lock` so the recorded checksums are enforced.
+Each manifest has a neighbouring `.lock.json` file. It records SHA-256 hashes for registry package archives or deterministic local/Git package contents, downloaded font files, and license notices. When you first use a custom manifest, or change its dependencies or fonts, generate/update that lock as part of the build with `--update-lock`. Keep the TOML file and its lock file together. For normal repeat builds, leave off `--update-lock` so the recorded checksums are enforced.
 
 == Build a browser VSIX
 
