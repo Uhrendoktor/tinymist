@@ -25,6 +25,12 @@ export type ExportKind =
   | "Text"
   | "Query";
 
+interface BrowserExportTaskResult {
+  sourcePath: string;
+  path: string | null;
+  data: string;
+}
+
 export function exportActivate(context: IContext) {
   context.subscriptions.push(
     commands.registerCommand("tinymist.exportCurrentPdf", commandExportCurrentPdf),
@@ -34,6 +40,28 @@ export function exportActivate(context: IContext) {
     commands.registerCommand("tinymist.showPdf", () => commandShow("Pdf")),
     commands.registerCommand("tinymist.exportCurrentFileAndShow", commandAskAndShow),
   );
+
+  if (extensionState.features.web) {
+    void tinymist.getClient().then(
+      (client) => {
+        context.subscriptions.push(
+          client.onNotification(
+            "tinymist/browserExportTaskResult",
+            (event: BrowserExportTaskResult) => {
+              void persistAutomaticBrowserExport(event).catch((error: unknown) => {
+                const message = error instanceof Error ? error.message : String(error);
+                console.error("Tinymist automatic browser export failed:", error);
+                void vscode.window.showErrorMessage(
+                  `Tinymist automatic export failed: ${message}`,
+                );
+              });
+            },
+          ),
+        );
+      },
+      (error: unknown) => console.error("Could not register browser export notification:", error),
+    );
+  }
 }
 
 export async function commandExportCurrentPdf(): Promise<ExportResponse | null> {
@@ -375,6 +403,32 @@ function workspaceUriForExportPath(sourceUri: vscode.Uri, serverPath: string): v
   // Preserve the source provider as a safe fallback; never silently switch a
   // virtual workspace export to an unrelated file: provider.
   return sourceUri.with({ path: serverPath, query: "", fragment: "" });
+}
+
+function workspaceUriForServerPath(serverPath: string): vscode.Uri {
+  const isWithinFolder = (candidate: string, folderPath: string) => {
+    let root = folderPath || "/";
+    while (root.length > 1 && root.endsWith("/")) {
+      root = root.slice(0, -1);
+    }
+    return candidate === root || candidate.startsWith(root === "/" ? "/" : `${root}/`);
+  };
+
+  const folder = (vscode.workspace.workspaceFolders ?? [])
+    .filter(({ uri }) => isWithinFolder(serverPath, uri.path))
+    .sort((left, right) => right.uri.path.length - left.uri.path.length)[0];
+  if (!folder) {
+    throw new Error(`No workspace filesystem provider owns automatic export source path: ${serverPath}`);
+  }
+  return folder.uri.with({ path: serverPath, query: "", fragment: "" });
+}
+
+async function persistAutomaticBrowserExport(event: BrowserExportTaskResult): Promise<void> {
+  const sourceUri = workspaceUriForServerPath(event.sourcePath);
+  const targetPath = event.path || defaultExportPath(sourceUri, "Pdf");
+  const targetUri = workspaceUriForExportPath(sourceUri, targetPath);
+  await writeBrowserFile(targetUri, event.data);
+  console.log(`Tinymist automatic browser PDF export persisted to ${targetUri.toString()}`);
 }
 
 async function writeBrowserFile(targetUri: vscode.Uri, encoded: string): Promise<void> {
