@@ -15,23 +15,34 @@ export function comparePackageVersions(left, right) {
   return 0;
 }
 
+export function selectLatestTypstPackageVersion(index, name, namespace = "preview") {
+  assert.equal(namespace, "preview", '"latest" is available only from Typst Universe preview');
+  assert.ok(Array.isArray(index), "Typst package index has an unexpected format");
+  const versions = [...new Set(index
+    .filter((item) => item?.name === name && typeof item.version === "string" && /^\d+\.\d+\.\d+$/.test(item.version))
+    .map((item) => item.version))];
+  assert.ok(versions.length > 0, "no published versions found for @" + namespace + "/" + name);
+  versions.sort(comparePackageVersions);
+  return versions.at(-1);
+}
+
 export async function fetchLatestTypstPackageVersion(name, namespace = "preview") {
   assert.equal(namespace, "preview", '"latest" is available only from Typst Universe preview');
   const url = "https://packages.typst.org/preview/index.json";
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok) throw new Error("Typst package index download failed: HTTP " + response.status);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  assert.ok(bytes.length <= 32 * 1024 * 1024, "Typst package index exceeds its configured size limit");
-  const index = JSON.parse(bytes.toString("utf8"));
-  assert.ok(Array.isArray(index), "Typst package index has an unexpected format");
-  const versions = [...new Set(index
-    .filter((item) => item?.name === name && typeof item.version === "string" && /^\d+\.\d+\.\d+$/.test(item.version))
-    .map((item) => item.version))];
-  assert.ok(versions.length > 0, "no published versions found for @preview/" + name);
-  versions.sort(comparePackageVersions);
-  return versions.at(-1);
+  const declared = Number(response.headers.get("content-length") || 0);
+  assert.ok(!declared || declared <= 32 * 1024 * 1024, "Typst package index exceeds its configured size limit");
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of response.body) {
+    total += chunk.length;
+    assert.ok(total <= 32 * 1024 * 1024, "Typst package index exceeds its configured size limit");
+    chunks.push(Buffer.from(chunk));
+  }
+  const index = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return selectLatestTypstPackageVersion(index, name, namespace);
 }
-
 /**
  * Copy a package directory without following links or including its Git
  * metadata. The digest is independent of mtimes and directory traversal order.
