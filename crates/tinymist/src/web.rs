@@ -98,8 +98,8 @@ impl TinymistLanguageServer {
         };
 
         let response = match result {
-            Ok(MaybeDone::Done(Ok(t))) => lsp_serialize(&t)
-            Ok(MaybeDone::Done(Err(err))) => lsp_err(err)
+            Ok(MaybeDone::Done(Ok(t))) => lsp_serialize(&t),
+            Ok(MaybeDone::Done(Err(err))) => lsp_err(err),
             // tokio doesn't get scheduled anymore after returning to js world
             Ok(MaybeDone::Future(fut)) => {
                 let future = TokioDrivenFuture::new(fut);
@@ -118,7 +118,7 @@ impl TinymistLanguageServer {
             //     Err(err) => lsp_err(err),
             // },
             Ok(MaybeDone::Gone) => lsp_err(internal_error("response was weirdly gone")),
-            Err(err) => lsp_err(err)
+            Err(err) => lsp_err(err),
         };
         poll_tokio_background_tasks();
         response

@@ -162,7 +162,7 @@ async function startServer() {
       return invokeBridge(() => bridge.on_request("tinymist/fsChange", params));
     });
     connection.onRequest((m, p) => invokeBridge(() => bridge.on_request(m, p)));
-    connection.onNotification((m) => {
+    connection.onNotification((m, p) => {
       void invokeBridge(() => bridge.on_notification(m, p)).catch((error: unknown) => {
         console.error("Failed to handle browser language-server notification", error);
       });
