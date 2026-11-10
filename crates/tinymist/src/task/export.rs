@@ -46,13 +46,25 @@ use crate::lsp::query::QueryFuture;
 #[cfg(feature = "system")]
 use crate::project::{update_lock, ApplyProjectTask, PROJECT_ROUTE_USER_ACTION_PRIORITY};
 use crate::project::{
-    CompiledArtifact, DevEvent, DevExportEvent, EntryReader, ExportHtmlTask, ExportPdfTask,
-    ExportTask as ProjectExportTask, ExportTeXTask, ExportTextTask, LspCompiledArtifact,
-    LspComputeGraph, ProjectClient, ProjectTask, TaskWhen,
+    BrowserExportTaskResult, CompiledArtifact, DevEvent, DevExportEvent, EntryReader,
+    ExportHtmlTask, ExportPdfTask, ExportTask as ProjectExportTask, ExportTeXTask, ExportTextTask,
+    LspCompiledArtifact, LspComputeGraph, ProjectClient, ProjectTask, TaskWhen,
 };
 use crate::world::TaskInputs;
 use crate::ServerState;
 use crate::{actor::editor::EditorRequest, tool::word_count};
+
+#[cfg(target_arch = "wasm32")]
+fn browser_export_source_path(artifact: &LspCompiledArtifact) -> Option<String> {
+    let entry = artifact.world().entry_state();
+    let main = entry.main()?;
+    let virtual_path = main.vpath().get_with_slash();
+    let source_path = match entry.workspace_root() {
+        Some(root) => root.join(virtual_path.trim_start_matches('/')),
+        None => PathBuf::from(virtual_path),
+    };
+    Some(source_path.to_string_lossy().into_owned())
+}
 
 /// Checks whether an export path is absolute on the current host.
 ///
@@ -341,8 +353,45 @@ impl ExportTask {
         let fut = self.export_folder.spawn(rev, || {
             let task = config.task.clone();
             let artifact = artifact.clone();
+            let client = client.clone();
             Box::pin(async move {
-                log_err(Self::do_export(task, artifact, None).await);
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let source_path = browser_export_source_path(&artifact);
+                    match Self::do_export_to_memory(task, artifact).await {
+                        Ok(Some(OnExportResponse::Single {
+                            path,
+                            data: Some(data),
+                        })) => {
+                            if let Some(source_path) = source_path {
+                                client.browser_export_task_result(BrowserExportTaskResult {
+                                    source_path,
+                                    path: path.map(|path| path.to_string_lossy().into_owned()),
+                                    data,
+                                });
+                            } else {
+                                log::error!(
+                                    "Browser automatic export failed: source path is unavailable"
+                                );
+                            }
+                        }
+                        Ok(Some(_)) => {
+                            log::error!(
+                                "Browser automatic export returned an unsupported multi-file artifact"
+                            );
+                        }
+                        Ok(None) => {
+                            log::warn!("Browser automatic export produced no artifact");
+                        }
+                        Err(error) => {
+                            log::error!("Browser automatic export failed: {error:#}");
+                        }
+                    }
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    log_err(Self::do_export(task, artifact, None).await);
+                }
                 if let Some(f) = export_hook {
                     f()
                 }
