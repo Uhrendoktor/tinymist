@@ -56,27 +56,41 @@ For a locked-down deployment, build the VSIX on a trusted machine, transfer the 
 
 == Customize bundled packages and fonts
 
-The default list is in `wasm-assets.toml`. Start by copying it so that your custom bundle keeps the existing package list and built-in font settings:
+The default package list is in `wasm-assets.toml`. Start by copying it:
 
 ```sh
 cp wasm-assets.toml my-wasm-assets.toml
 ```
 
-Edit `my-wasm-assets.toml`:
-
-- Add Typst packages under the existing `[dependencies]` table.
-- Pin every package to an exact version. The leading `=` is required.
-- Give each dependency an alias. Aliases let you include two versions of the same package at once.
-- The namespace defaults to `preview`. For published Typst packages, do not add a per-package license table: the builder reads the SPDX expression from the package's `typst.toml` and the `LICENSE` file from the same archive. If `LICENSE` is only a short SPDX expression, the builder retrieves the canonical license text for each identifier.
-- Use `[package.metadata.tinymist.dependency-metadata.<alias>]` only for exceptional packages that need a namespace/archive URL override, an explicit license override, or a non-standard license notice source.
-- Add extra fonts under `[package.metadata.tinymist.fonts.<alias>]`. Each font needs a downloadable file URL and license information. Only bundle fonts whose licenses permit redistribution.
-
-For example, add a package and an extra font like this (merge these entries into the copied manifest; do not add a second `[dependencies]` table):
+Edit the `[packages]` table in `my-wasm-assets.toml`. Keys are the actual Typst package names; no aliases or Cargo version prefixes are needed. Use a single version string, a list of versions, or `"latest"`:
 
 ```toml
-[dependencies]
-my_package = { package = "my-package", version = "=1.2.3" }
+[packages]
+cetz = ["0.3.4", "0.5.3"]
+zero = ["0.6.1", "0.7.1"]
+codly = "2.0.0"
+fletcher = "latest"
+```
 
+Typst imports still require a concrete version. When you run `--update-lock`, `"latest"` is resolved against the Typst Universe index and the selected version is recorded in the lock. Normal locked builds keep using that selected version until you deliberately update the lock.
+
+You can also bundle a package directly from a local directory or Git repository:
+
+```toml
+[packages]
+my_local_package = { path = "../my-local-package", namespace = "local" }
+my_git_package = { git = "https://github.com/example/typst-package.git", rev = "0123456789abcdef0123456789abcdef01234567", subdirectory = "package", namespace = "local" }
+```
+
+A local path is relative to the manifest file and must contain the package's `typst.toml`. For Git sources, specify exactly one of `rev`, `tag`, or `branch`; the lock records the resolved commit. A full commit ID in `rev` is the most explicit choice. Use arrays to select multiple local or Git versions of the same package too.
+
+For published Typst packages, do not add per-package license tables: the builder reads the SPDX expression from `typst.toml` and the `LICENSE` file from the package source. It retrieves canonical SPDX texts when `LICENSE` is only a short identifier. Package license details are stored in the lock. Use `[package.metadata.tinymist.dependency-metadata.<package-name>]` only for exceptional overrides.
+
+Typst's built-in text fonts are compiled into the web build and need no configuration. Add extra fonts under `[package.metadata.tinymist.fonts.<name>]`. Each extra font needs a file URL and explicit license information; only bundle fonts whose licenses permit redistribution.
+
+For example, add an extra font like this (merge it into the copied manifest):
+
+```toml
 [package.metadata.tinymist.fonts.MyFontRegular]
 file = "MyFont-Regular.ttf"
 url = "https://example.org/fonts/MyFont-Regular.ttf"
@@ -84,15 +98,7 @@ license = "SIL OFL 1.1"
 license-url = "https://example.org/fonts/OFL.txt"
 ```
 
-Only for an unusual non-registry package that lacks a `typst.toml` license declaration or standard license notice, add an explicit override:
-
-```toml
-[package.metadata.tinymist.dependency-metadata.my_package]
-license = "MIT"
-license-url = "https://example.org/my-package/LICENSE"
-```
-
-The package and font names/URLs above are placeholders. The built-in Typst text fonts are already included; add font entries only for extra fonts you need. Package license expressions, notice sources, and SHA-256 hashes are resolved automatically and recorded in the adjacent lock file.
+For a non-standard package without a discoverable license notice, provide an explicit license override under `[package.metadata.tinymist.dependency-metadata.<package-name>]`. The package and font names/URLs above are placeholders. Package sources, versions, checksums and license notice hashes are recorded in the adjacent lock file.
 
 Each manifest has a neighbouring `.lock.json` file containing SHA-256 checksums for the downloaded package archives and font files. When you first use a custom manifest, or change its dependencies or fonts, generate/update that lock as part of the build with `--update-lock`. Keep the TOML file and its lock file together. For normal repeat builds, leave off `--update-lock` so the recorded checksums are enforced.
 
