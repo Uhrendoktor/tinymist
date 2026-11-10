@@ -283,13 +283,13 @@ export async function commandExport(
     return null;
   }
 
-  const uri = vscode.window.activeTextEditor?.document.uri.fsPath;
-  if (!uri) {
+  const sourceUri = vscode.window.activeTextEditor?.document.uri;
+  if (!sourceUri) {
     return null;
   }
 
   const response = await tinymist[`export${kind}`](
-    uri,
+    sourceUri.fsPath,
     opts,
     extensionState.features.web ? { ...actionOpts, write: false, open: false } : actionOpts,
   );
@@ -298,7 +298,7 @@ export async function commandExport(
     return response;
   }
 
-  const persisted = await persistBrowserExport(response, kind, uri);
+  const persisted = await persistBrowserExport(response, kind, sourceUri);
   return persisted ? response : null;
 }
 
@@ -323,44 +323,78 @@ function decodeExportData(encoded: string): Uint8Array {
   return bytes;
 }
 
-function defaultExportPath(sourcePath: string, kind: ExportKind): string {
-  const slash = Math.max(sourcePath.lastIndexOf("/"), sourcePath.lastIndexOf(String.fromCharCode(92)));
+function defaultExportPath(sourceUri: vscode.Uri, kind: ExportKind): string {
+  const sourcePath = sourceUri.path;
+  const slash = sourcePath.lastIndexOf("/");
   const filename = sourcePath.slice(slash + 1);
   const dot = filename.lastIndexOf(".");
   const stem = dot > 0 ? filename.slice(0, dot) : filename;
-  const directory = slash >= 0 ? sourcePath.slice(0, slash + 1) : "";
+  const directory = slash >= 0 ? sourcePath.slice(0, slash + 1) : "/";
   return `${directory}${stem}.${EXPORT_EXTENSIONS[kind]}`;
 }
 
 function withPageSuffix(filePath: string, page: number): string {
-  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf(String.fromCharCode(92)));
+  const slash = filePath.lastIndexOf("/");
   const dot = filePath.lastIndexOf(".");
   const insertAt = dot > slash ? dot : filePath.length;
   return `${filePath.slice(0, insertAt)}-page-${page}${filePath.slice(insertAt)}`;
 }
 
-async function writeBrowserFile(filePath: string, encoded: string): Promise<void> {
-  const separator = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf(String.fromCharCode(92)));
-  const parent = separator >= 0 ? filePath.slice(0, separator) : "";
-  if (parent) {
-    await vscode.workspace.fs.createDirectory(vscode.Uri.file(parent));
+/**
+ * Maps canonical file paths returned by the WASM language server back to the
+ * VS Code workspace filesystem provider. Browser workspaces may use virtual
+ * schemes such as vscode-vfs or vscode-test-web instead of file:.
+ */
+function workspaceUriForExportPath(sourceUri: vscode.Uri, serverPath: string): vscode.Uri {
+  if (sourceUri.scheme === "file") {
+    return vscode.Uri.file(serverPath);
   }
-  await vscode.workspace.fs.writeFile(vscode.Uri.file(filePath), decodeExportData(encoded));
+
+  const isWithinFolder = (candidate: string, folderPath: string) => {
+    const root = folderPath.replace(/\\/+$/, "") || "/";
+    return candidate === root || candidate.startsWith(root === "/" ? "/" : `${root}/`);
+  };
+
+  const folder = (vscode.workspace.workspaceFolders ?? [])
+    .filter(
+      ({ uri }) =>
+        uri.scheme === sourceUri.scheme &&
+        uri.authority === sourceUri.authority &&
+        isWithinFolder(sourceUri.path, uri.path) &&
+        isWithinFolder(serverPath, uri.path),
+    )
+    .sort((left, right) => right.uri.path.length - left.uri.path.length)[0];
+
+  if (folder) {
+    return folder.uri.with({ path: serverPath, query: "", fragment: "" });
+  }
+
+  // Preserve the source provider as a safe fallback; never silently switch a
+  // virtual workspace export to an unrelated file: provider.
+  return sourceUri.with({ path: serverPath, query: "", fragment: "" });
+}
+
+async function writeBrowserFile(targetUri: vscode.Uri, encoded: string): Promise<void> {
+  const separator = targetUri.path.lastIndexOf("/");
+  const parent = separator > 0 ? targetUri.path.slice(0, separator) : "/";
+  await vscode.workspace.fs.createDirectory(
+    targetUri.with({ path: parent, query: "", fragment: "" }),
+  );
+  await vscode.workspace.fs.writeFile(targetUri, decodeExportData(encoded));
 }
 
 async function persistBrowserExport(
   response: ExportResponse,
   kind: ExportKind,
-  sourcePath: string,
+  sourceUri: vscode.Uri,
 ): Promise<boolean> {
-  const defaultPath = defaultExportPath(sourcePath, kind);
-  const choosePath = async (suggestedPath: string): Promise<string | undefined> => {
-    const uri = await vscode.window.showSaveDialog({
-      defaultUri: vscode.Uri.file(suggestedPath),
+  const defaultPath = defaultExportPath(sourceUri, kind);
+  const choosePath = async (suggestedPath: string): Promise<vscode.Uri | undefined> => {
+    return await vscode.window.showSaveDialog({
+      defaultUri: workspaceUriForExportPath(sourceUri, suggestedPath),
       saveLabel: l10nMsg("Save export"),
       filters: { [EXPORT_EXTENSIONS[kind].toUpperCase()]: [EXPORT_EXTENSIONS[kind]] },
     });
-    return uri?.fsPath;
   };
 
   if ("items" in response) {
@@ -377,14 +411,14 @@ async function persistBrowserExport(
     if (allPathsAreDistinct) {
       for (const item of items) {
         if (item.data && item.path) {
-          await writeBrowserFile(item.path, item.data);
+          await writeBrowserFile(workspaceUriForExportPath(sourceUri, item.path), item.data);
         }
       }
       return true;
     }
 
-    const firstPath = await choosePath(items[0].path || defaultPath);
-    if (!firstPath) {
+    const firstUri = await choosePath(items[0].path || defaultPath);
+    if (!firstUri) {
       return false;
     }
 
@@ -392,9 +426,13 @@ async function persistBrowserExport(
       if (!item.data) {
         continue;
       }
-      const targetPath = withPageSuffix(firstPath, item.page + 1);
-      await writeBrowserFile(targetPath, item.data);
-      item.path = targetPath;
+      const targetUri = firstUri.with({
+        path: withPageSuffix(firstUri.path, item.page + 1),
+        query: "",
+        fragment: "",
+      });
+      await writeBrowserFile(targetUri, item.data);
+      item.path = targetUri.path;
     }
     return true;
   }
@@ -403,12 +441,14 @@ async function persistBrowserExport(
     return false;
   }
 
-  const targetPath = response.path || (await choosePath(defaultPath));
-  if (!targetPath) {
+  const targetUri = response.path
+    ? workspaceUriForExportPath(sourceUri, response.path)
+    : await choosePath(defaultPath);
+  if (!targetUri) {
     return false;
   }
-  await writeBrowserFile(targetPath, response.data);
-  response.path = targetPath;
+  await writeBrowserFile(targetUri, response.data);
+  response.path = targetUri.path;
   return true;
 }
 
@@ -481,13 +521,17 @@ export async function commandShow(kind: ExportKind, extraOpts?: ExportOpts): Pro
     return;
   }
 
-  const showRes = await showExportFileIn(exportResponse, openIn);
+  const showRes = await showExportFileIn(exportResponse, openIn, activeEditor.document.uri);
   if (!showRes) {
     await vscode.window.showErrorMessage(`Failed to export ${kind}: no path in response`);
   }
 }
 
-async function showExportFileIn(exportResponse: ExportResponse, openIn: string): Promise<boolean> {
+async function showExportFileIn(
+  exportResponse: ExportResponse,
+  openIn: string,
+  sourceUri: vscode.Uri,
+): Promise<boolean> {
   // PDF export is not paged. The response should be a simple object.
   // For other formats, we just open the first page.
   const exportPath =
@@ -501,7 +545,7 @@ async function showExportFileIn(exportResponse: ExportResponse, openIn: string):
       break;
     case "editorTab": {
       // find and replace exportUri
-      const exportUri = vscode.Uri.file(exportPath);
+      const exportUri = workspaceUriForExportPath(sourceUri, exportPath);
       const uriToFind = exportUri.toString();
       findTab: for (const editor of vscode.window.tabGroups.all) {
         for (const tab of editor.tabs) {
