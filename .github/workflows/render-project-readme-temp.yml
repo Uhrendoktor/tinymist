@@ -23,6 +23,7 @@ jobs:
         with:
           components: rustfmt
           cache: false
+      - uses: typst-community/setup-typst@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
