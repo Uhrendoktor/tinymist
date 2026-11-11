@@ -2,6 +2,10 @@
 
 This is the tinymist language service, integrated with editor frontends and other tools to provide features like code intelligence, linting, debugging, and preview rendering for Typst projects.
 
+## Fork-specific browser build
+
+This repository is `Uhrendoktor/tinymist`, a fork of `Myriad-Dreamin/tinymist`. It tracks upstream, but the browser/WebAssembly VS Code build and its asset bundler are maintained here. Use this repository for work involving `scripts/build-browser.mjs`, `wasm-assets.toml` and its lock file, or packages and fonts embedded in the browser VSIX. These browser/WASM changes are fork-specific; do not send them upstream as-is. For shared Tinymist behavior, compare with upstream before deciding whether a change belongs here.
+
 ## Quick Start
 
 1. Read the nearest relevant docs before editing. Start with `docs/dev-guide.md`, then inspect the affected crate or editor directory.

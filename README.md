@@ -7,25 +7,15 @@ Tinymist \[ˈtaɪni mɪst\] is an integrated language service for [Typst](https:
 
 ## About this fork
 
-This repository is a standalone, maintained fork of [upstream Tinymist](https://github.com/Myriad-Dreamin/tinymist). Its main branch is kept up to date by bringing upstream changes into this fork while retaining the fork-specific work described here.
-
-The browser and WebAssembly packaging and asset-bundling capability is owned and maintained exclusively in this fork. This includes the Typst package/font wasm-assets.toml manifest, its checksum lock file, bundled Typst packages and fonts, and the local scripts/build-browser.mjs builder for browser VSIX files.
-
-This fork is not an upstream contribution branch. Do not merge this fork’s main branch or its WASM-specific feature branches back into Myriad-Dreamin/tinymist, and do not submit fork-only WASM changes as upstream pull requests. Upstream changes flow into this fork; the WASM bundling capability is maintained here.
+This is a maintained fork of [upstream Tinymist](https://github.com/Myriad-Dreamin/tinymist). It tracks upstream while keeping the browser/WASM VS Code build and its asset bundler here. Those changes are fork-specific and are not intended to be sent upstream as-is.
 
 ## Standalone browser/WASM build
 
-### Why this library exists
+The browser target runs Tinymist as a VS Code Web Extension. Typst packages and optional fonts selected in the manifest are embedded in the VSIX at build time. At runtime, the extension uses those bundled assets; packages that were not included are not downloaded.
 
-The browser build is designed to be a standalone Typst compiler package for environments where a normal extension cannot download packages or fonts at runtime. This is useful for locked-down company machines, restricted networks, and offline workstations.
+The WASM module cannot make network requests or access the host filesystem directly. VS Code reads workspace files through its extension API and passes their contents to the compiler. This describes the WASM boundary, not a security guarantee for documents or the surrounding extension.
 
-The Typst packages and extra fonts you select are downloaded at build time, checked, and embedded into the WebAssembly (WASM) binary inside the VSIX. When the extension is running, it resolves those packages and fonts from the embedded bundle. It does not contact the Typst package registry, download fonts, or need operating-system font discovery. A package that was not bundled is reported as missing instead of being fetched from the network.
-
-The compiler runs inside the browser’s WebAssembly sandbox. The WASM module has no ambient network access and no unrestricted operating-system filesystem access: it cannot open arbitrary files, scan folders, or make network requests by itself. To compile a document, the VS Code extension host reads the workspace inputs that the editor makes available and explicitly passes the required content to the WASM compiler through the extension API bridge. That is a controlled input channel, not direct filesystem access from WASM.
-
-This boundary limits what the compiler module can access; it is not a claim that every document or extension is automatically safe. The compiler still processes document content supplied to it, and the surrounding VS Code/browser installation should be kept up to date.
-
-For a locked-down deployment, build the VSIX on a trusted machine, transfer the finished VSIX to the target machine, and install it locally. Package and font resolution for the assets embedded in that VSIX does not require runtime network access.
+To use the extension on a machine without package or font downloads, build the VSIX on a machine with the required tools and transfer it for local installation. The bundled assets need no runtime downloads.
 
 ### Customize bundled packages and fonts
 
