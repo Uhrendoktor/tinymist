@@ -1,0 +1,59 @@
+name: one-time README generation
+
+on:
+  push:
+    branches:
+      - docs/wasm-bundler-readme
+    paths:
+      - .github/workflows/regenerate-wasm-bundler-readme.yml
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-save-if: false
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+      - name: Build README renderer
+        run: cargo build --locked --bin typlite
+      - name: Render README from Typst source
+        env:
+          BRANCH: ${{ github.ref_name }}
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          mkdir -p assets/images/introduction
+          target/debug/typlite \
+            --input "tinymist-git-head=ref:refs/heads/$BRANCH" \
+            --input "tinymist-git-head-branch=$BRANCH" \
+            --input "tinymist-git-head-hash=$head" \
+            --assets-path assets/images/introduction \
+            --root "$WORKSPACE" \
+            docs/tinymist/introduction.typ - > README.md
+          grep -Fqx '# Tinymist WASM Bundler' README.md
+          grep -Fq 'This repository contains a small set of browser/WASM changes' README.md
+          grep -Fq 'https://github.com/Uhrendoktor/tinymist-wasm-bundler.git' README.md
+          ! grep -Fq 'is an integrated language service for' README.md
+          ! grep -Fq '## Features' README.md
+          git diff --check
+      - name: Commit generated README
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --check
+          git commit -m "docs: regenerate WASM bundler README"
+          git push origin "HEAD:$BRANCH"
