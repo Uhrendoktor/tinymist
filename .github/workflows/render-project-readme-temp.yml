@@ -1,0 +1,45 @@
+name: Render generated project README (temporary)
+
+on:
+  push:
+    branches:
+      - wasm/benefit-first-project-description
+    paths:
+      - docs/tinymist/introduction.typ
+      - .github/workflows/render-project-readme-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  render-readme:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+          with:
+            components: rustfmt
+            cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile --prefer-offline
+      - name: Build Typlite
+        run: yarn build:typlite
+      - name: Render generated documentation
+        run: node scripts/link-docs.mjs
+      - name: Verify README opening
+        run: grep -Fq "Edit Typst in the browser" README.md
+      - name: Commit generated README
+        run: |
+          if ! git diff --quiet -- README.md; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add README.md
+            git commit -m "docs: regenerate README"
+            git push
+          fi
