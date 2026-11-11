@@ -22,7 +22,7 @@
   ))
 }
 
-This repository contains a small set of browser/WASM changes to #link("https://github.com/Myriad-Dreamin/tinymist")[upstream Tinymist] and the tooling to build its VS Code Web extension. It is build tooling, not the Tinymist language service or a separate editor project. The main entry point is `scripts/build-browser.mjs`: it builds the WebAssembly target and packages the selected Typst packages and optional fonts into the resulting VSIX.
+Edit Typst in the browser—or on restricted devices—without installing or hosting a separate Tinymist backend. Tinymist WASM Bundler builds #link("https://github.com/Myriad-Dreamin/tinymist")[upstream Tinymist] for WebAssembly and packages it as a VS Code Web extension, with selected Typst packages and optional fonts bundled into the VSIX for use at runtime. The Tinymist language service remains the upstream project; this repository provides the browser/WASM build and bundling tooling.
 
 = Browser/WASM build
 
