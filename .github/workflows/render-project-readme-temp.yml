@@ -26,6 +26,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Install pinned Yarn
+        run: npm install --global yarn@1.22.22
       - name: Install JavaScript dependencies
         run: yarn install --frozen-lockfile --prefer-offline
       - name: Build Typlite
